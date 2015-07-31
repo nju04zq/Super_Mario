@@ -43,6 +43,22 @@ class World(object):
         self.render_with_etype(surface, EntityType.BACKGROUND)
         self.render_with_etype(surface, EntityType.MARIO)
 
+    def exceed_border(self, mario):
+        w, h = mario.img.get_size()
+        ul_x = mario.pos[0]
+        ul_y = mario.pos[1] - h + 1
+        br_x = mario.pos[0] + w - 1
+        br_y = mario.pos[1]
+        left_border = 1
+        if ul_x <= left_border:
+            mario.pos[0] = left_border
+            return True
+        right_border = ORIGINAL_SIZE[0]-2
+        if br_x >= right_border:
+            mario.pos[0] = right_border - w + 1
+            return True
+        return False
+
 class State():
     def __init__(self, name):
         self.name = name
@@ -111,7 +127,7 @@ class GameRc(object):
     mario1_png = "mario1_12x16.png"
     mario2_png = "mario2_13x15.png"
     mario3_png = "mario3_15x16.png"
-    mario4_png = "mario4_11x16.png"
+    mario4_png = "mario4_13_16.png"
     mario5_png = "mario5_13x16.png"
 
     def __init__(self):
@@ -170,6 +186,7 @@ class MarioStateMachine(object):
     slow_run_state_name = "slow_run_state"
     fast_run_state_name = "fast_run_state"
     brake_state_name = "brake_state"
+    hit_wall_state_name = "hit_wall_state"
 
     def __init__(self, mario):
         self.mario = mario
@@ -179,6 +196,7 @@ class MarioStateMachine(object):
         self.add_slow_run_state()
         self.add_fast_run_state()
         self.add_brake_state()
+        self.add_hit_wall_state()
 
         self.counter = 0
     
@@ -247,6 +265,18 @@ class MarioStateMachine(object):
                                  brake_move_offset)
         self.add_state(brake_state)
 
+    def add_hit_wall_state(self):
+        hit_wall_img_set = [game_rc.mario2_img, game_rc.mario3_img,
+                            game_rc.mario4_img]
+        hit_wall_img_rate = 7
+        hit_wall_transform_offset = [-2, 2, 0]
+        hit_wall_move_offset = 0
+        hit_wall_state = MarioState(self.hit_wall_state_name,
+                                    hit_wall_img_set, hit_wall_img_rate, 
+                                    hit_wall_transform_offset,
+                                    hit_wall_move_offset)
+        self.add_state(hit_wall_state)
+
     def decide_cur_state(self):
         if self.active_state is None:
             return self.states[self.stand_state_name]
@@ -254,6 +284,8 @@ class MarioStateMachine(object):
         mario = self.mario
         if mario.speed_x == 0:
             return self.states[self.stand_state_name]
+        elif mario.world.exceed_border(mario):
+            return self.states[self.hit_wall_state_name]
         elif abs(mario.acce_x) == mario.ACCE_DEC_FAST:
             return self.states[self.brake_state_name]
         elif abs(mario.speed_x) <= mario.SPEED_WALK_MAX:
@@ -437,7 +469,7 @@ class Mario(GameEntity):
         y += h
         text = sys_font.render("%d"%time_passed, True, (0, 0, 0))
         surface.blit(text, (16,y))
-        #print "mario pos:", self.pos
+        #print "mario state:", state.state_name, "pos:", self.pos
 
     def render(self, surface):
         GameEntity.render(self, surface)
