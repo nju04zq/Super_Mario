@@ -445,16 +445,16 @@ class Mario(GameEntity):
         speedx_direction = self.get_speedx_direction()
         self.heading[0] = speedx_direction
 
-    def choose_state(self):
-        self.counter += 1
-
-        if abs(self.acce_x) == ACCE_DEC_FAST:
-            self.img_set = mario_setting.brake_img_set
-            self.img_set_idx = 0
-            return
-        if abs(self.speed_x) < SPEED_WALK_MAX:
-            self.rate = mario_setting.walk_rate
-
+#    def choose_state(self):
+#        self.counter += 1
+#
+#        if abs(self.acce_x) == ACCE_DEC_FAST:
+#            self.img_set = mario_setting.brake_img_set
+#            self.img_set_idx = 0
+#            return
+#        if abs(self.speed_x) < SPEED_WALK_MAX:
+#            self.rate = mario_setting.walk_rate
+#
     def debug(self, surface):
         y = 100
         status = "{}, {}, {}".format(self.acce_x, self.ctrl_x, self.speed_x)
