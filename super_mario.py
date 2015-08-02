@@ -164,203 +164,200 @@ class Wood(GameEntity):
                             EntityType.BACKGROUND, img)
 
 class MarioState(object):
-    def __init__(self, state_name, img_set, rate,
-                 transform_offset, move_offset):
+    def __init__(self, state_machine, state_name, img_set,
+                 transform_rate, transform_offset, move_offset):
+        self.state_machine = state_machine
         self.state_name = state_name
+        self.img_idx = 0
         self.img_set = img_set
-        self.rate = rate
+        self.transform_counter = 0
+        self.transform_rate = transform_rate
         self.transform_offset = transform_offset
         self.move_offset = move_offset
-        self.img_idx = 0
+        self.state_detail = "normal"
+
+    def set_mario_img(self):
+        self.state_machine.mario.set_img(self.img_set[self.img_idx])
 
     def entry_action(self, img_idx):
+        self.transform_counter = 0
         img_idx %= len(self.img_set)
         self.img_idx = img_idx
+        self.set_mario_img()
+
+    def update(self):
+        pass
+
+    def calc_transform_offset(self):
+        mario = self.state_machine.mario
+        if mario.speed_x >= 0: #moving right or not moving
+            offset = self.transform_offset[self.img_idx]
+        else:
+            next_img_idx = (self.img_idx+1) % len(self.img_set)
+            next_img_w = self.img_set[next_img_idx].get_width()
+            w = self.img_set[self.img_idx].get_width()
+            offset = self.transform_offset[self.img_idx]
+            offset += (next_img_w - w)
+        return (offset, 0)
+
+    def calc_move_offset(self):
+        return (self.move_offset, 0)
+
+    def calc_offset(self):
+        self.transform_counter += 1
+        self.transform_counter %= self.transform_rate
+        if self.transform_rate != 1 and self.transform_counter == 0:
+            offset = self.calc_transform_offset()
+            self.img_idx += 1
+            self.img_idx %= len(self.img_set)
+            self.set_mario_img()
+        else:
+            offset = self.calc_move_offset()
+
+        return offset
 
     def exit_action(self):
         pass
 
+class MarioStandState(MarioState):
+    def __init__(self, state_machine):
+        state_name = state_machine.stand_state_name
+        img_set = [game_rc.mario1_img]
+        transform_rate = 1
+        transform_offset = [0]
+        move_offset = 0
+        MarioState.__init__(self, state_machine, state_name, img_set,
+                            transform_rate, transform_offset, move_offset)
+
+class MarioWalkState(MarioState):
+    state_detail_walk = "normal"
+    state_detail_slow_run = "slow_run"
+    state_detail_fast_run = "fast_run"
+
+    transform_offset = [0, 5, 1]
+    walk_transform_rate = 4
+    walk_move_offset = 1
+    slow_run_transform_rate = 3
+    slow_run_move_offset = 1
+    fast_run_tranform_rate = 2
+    fast_run_move_offset = 2
+
+    def __init__(self, state_machine):
+        state_name = state_machine.walk_state_name
+        img_set = [game_rc.mario2_img, game_rc.mario3_img, game_rc.mario4_img]
+        transform_rate = self.walk_transform_rate
+        transform_offset = self.transform_offset
+        move_offset = self.walk_move_offset
+        MarioState.__init__(self, state_machine, state_name, img_set,
+                            transform_rate, transform_offset, move_offset)
+        self.state_detail = self.state_detail_walk
+
+    def set_to_normal_walk(self):
+        self.state_detail = self.state_detail_walk
+        self.move_offset = self.walk_move_offset
+        self.transform_rate = self.walk_transform_rate
+
+    def set_to_slow_run(self):
+        self.state_detail = self.state_detail_slow_run
+        self.move_offset = self.slow_run_move_offset
+        self.transform_rate = self.slow_run_transform_rate
+
+    def set_to_fast_run(self):
+        self.state_detail = self.state_detail_fast_run
+        self.move_offset = self.fast_run_move_offset
+        self.transform_rate = self.fast_run_tranform_rate
+
+    def update(self):
+        mario = self.state_machine.mario
+        if abs(mario.speed_x) <= mario.SPEED_WALK_MAX:
+            self.set_to_normal_walk()
+        elif abs(mario.speed_x) <= mario.SPEED_RUN_SLOW_MAX:
+            self.set_to_slow_run()
+        elif abs(mario.speed_x) <= mario.SPEED_RUN_FAST_MAX:
+            self.set_to_fast_run()
+
+class MarioBrakeState(MarioState):
+    def __init__(self, state_machine):
+        state_name = state_machine.brake_state_name
+        img_set = [game_rc.mario5_img]
+        transform_rate = 1
+        transform_offset = [0]
+        move_offset = 2
+        MarioState.__init__(self, state_machine, state_name, img_set,
+                            transform_rate, transform_offset, move_offset)
+
+class MarioHitWallState(MarioState):
+    def __init__(self, state_machine):
+        state_name = state_machine.hit_wall_state_name
+        img_set = [game_rc.mario2_img, game_rc.mario3_img, game_rc.mario4_img]
+        transform_rate = 7
+        transform_offset = [-2, 2, 0]
+        move_offset = 0
+        MarioState.__init__(self, state_machine, state_name, img_set,
+                            transform_rate, transform_offset, move_offset)
+
 class MarioStateMachine(object):
     stand_state_name = "stand_state"
     walk_state_name = "walk_state"
-    slow_run_state_name = "slow_run_state"
-    fast_run_state_name = "fast_run_state"
     brake_state_name = "brake_state"
     hit_wall_state_name = "hit_wall_state"
 
     def __init__(self, mario):
         self.mario = mario
         self.states = {}
-        self.add_stand_state()
-        self.add_walk_state()
-        self.add_slow_run_state()
-        self.add_fast_run_state()
-        self.add_brake_state()
-        self.add_hit_wall_state()
+        self.add_state(MarioStandState(self))
+        self.add_state(MarioWalkState(self))
+        self.add_state(MarioBrakeState(self))
+        self.add_state(MarioHitWallState(self))
 
-        self.counter = 0
-    
         self.active_state = None
-        self.choose_state()
-        self.apply_state()
+        self.think()
 
     def add_state(self, state):
         self.states[state.state_name] = state
-    
-    def add_stand_state(self):
-        stand_img_set = [game_rc.mario1_img]
-        stand_img_rate = 4
-        stand_img_transform_offset = [0]
-        stand_img_move_offset = 0
-        stand_state = MarioState(self.stand_state_name,
-                                 stand_img_set, stand_img_rate, 
-                                 stand_img_transform_offset,
-                                 stand_img_move_offset)
-        self.add_state(stand_state)
-
-    def add_walk_state(self):
-        walk_img_set = [game_rc.mario2_img, game_rc.mario3_img,
-                        game_rc.mario4_img]
-        walk_img_rate = 4
-        walk_img_transform_offset = [0, 5, 1]
-        walk_img_move_offset = 1
-        walk_state = MarioState(self.walk_state_name,
-                                walk_img_set, walk_img_rate, 
-                                walk_img_transform_offset,
-                                walk_img_move_offset)
-        self.add_state(walk_state)
-
-    def add_slow_run_state(self):
-        slow_run_img_set = [game_rc.mario2_img, game_rc.mario3_img,
-                            game_rc.mario4_img]
-        slow_run_img_rate = 3
-        slow_run_transform_offset = [0, 5, 1]
-        slow_run_move_offset = 1
-        slow_run_state = MarioState(self.slow_run_state_name,
-                                    slow_run_img_set, slow_run_img_rate, 
-                                    slow_run_transform_offset,
-                                    slow_run_move_offset)
-        self.add_state(slow_run_state)
-
-    def add_fast_run_state(self):
-        fast_run_img_set = [game_rc.mario2_img, game_rc.mario3_img,
-                            game_rc.mario4_img]
-        fast_run_img_rate = 2
-        fast_run_transform_offset = [0, 5, 1]
-        fast_run_move_offset = 2
-        fast_run_state = MarioState(self.fast_run_state_name,
-                                    fast_run_img_set, fast_run_img_rate, 
-                                    fast_run_transform_offset,
-                                    fast_run_move_offset)
-        self.add_state(fast_run_state)
-
-    def add_brake_state(self):
-        brake_img_set = [game_rc.mario5_img]
-        brake_img_rate = 1
-        brake_transform_offset = [2]
-        brake_move_offset = 0 
-        brake_state = MarioState(self.brake_state_name,
-                                 brake_img_set, brake_img_rate, 
-                                 brake_transform_offset,
-                                 brake_move_offset)
-        self.add_state(brake_state)
-
-    def add_hit_wall_state(self):
-        hit_wall_img_set = [game_rc.mario2_img, game_rc.mario3_img,
-                            game_rc.mario4_img]
-        hit_wall_img_rate = 7
-        hit_wall_transform_offset = [-2, 2, 0]
-        hit_wall_move_offset = 0
-        hit_wall_state = MarioState(self.hit_wall_state_name,
-                                    hit_wall_img_set, hit_wall_img_rate, 
-                                    hit_wall_transform_offset,
-                                    hit_wall_move_offset)
-        self.add_state(hit_wall_state)
 
     def decide_cur_state(self):
-        if self.active_state is None:
-            return self.states[self.stand_state_name]
-
         mario = self.mario
-        if mario.speed_x == 0:
+        if self.active_state is None or mario.speed_x == 0:
             return self.states[self.stand_state_name]
         elif mario.world.exceed_border(mario):
             return self.states[self.hit_wall_state_name]
         elif abs(mario.acce_x) == mario.ACCE_DEC_FAST:
             return self.states[self.brake_state_name]
-        elif abs(mario.speed_x) <= mario.SPEED_WALK_MAX:
+        elif abs(mario.speed_x) > 0:
             return self.states[self.walk_state_name]
-        elif abs(mario.speed_x) <= mario.SPEED_RUN_SLOW_MAX:
-            return self.states[self.slow_run_state_name]
-        elif abs(mario.speed_x) <= mario.SPEED_RUN_FAST_MAX:
-            return self.states[self.fast_run_state_name]
 
+        # should not arrive here, but to be safe
         return self.states[self.stand_state_name]
 
     def switch_state(self, state):
-        self.counter = 0
         img_idx = 0
         if self.active_state is not None:
             self.active_state.exit_action()
             img_idx = self.active_state.img_idx;
         state.entry_action(img_idx)
-        self.mario.set_img(state.img_set[state.img_idx])
         self.active_state = state
 
     def choose_state(self):
-        self.counter += 1
         cur_state = self.decide_cur_state()
         if cur_state is not self.active_state:
             self.switch_state(cur_state)
 
-    def calc_transform_offset(self):
-        mario = self.mario
-        state = self.active_state
-        if mario.speed_x >= 0:
-            return state.transform_offset[state.img_idx]
-        next_img_idx = (state.img_idx+1) % len(state.img_set)
-        next_img_w = state.img_set[next_img_idx].get_width()
-        w = state.img_set[state.img_idx].get_width()
-        offset = state.transform_offset[state.img_idx]
-        offset += (next_img_w - w)
-        return offset
-
     def apply_state(self):
         state = self.active_state
-        self.counter %= state.rate
-        if self.counter == 0:
-            offset = self.calc_transform_offset()
-            state.img_idx += 1
-            state.img_idx %= len(state.img_set)
-            self.mario.set_img(state.img_set[state.img_idx])
-        else:
-            offset = state.move_offset
+        state.update()
+        offset = state.calc_offset()
+        self.update_mario_pos(offset)
 
-        self.update_mario_pos(offset, 0)
+    def think(self):
+        self.choose_state()
+        self.apply_state()
 
-    def update_mario_pos(self, offset_x, offset_y):
+    def update_mario_pos(self, offset):
         #print "offset:", offset_x
         mario = self.mario
         heading = mario.heading
-        mario.pos += Vector2(offset_x*heading[0], offset_y*heading[1])
-
-#class MarioSetting(object):
-#    def __init__(self):
-#        self.stand_img_offset = [0]
-#
-#        self.move_img_offset = [1, 5, 1]
-#
-#        self.brake_img_set = [game_rc.mario5_img]
-#        self.brake_img_offset [0]
-#
-#        self.stand_rate = 1
-#        self.stand_move_offset = 0
-#        self.walk_rate = 4
-#        self.walk_move_offset = 1
-#        self.run_slow_rate = 3
-#        self.run_slow_move_offset = 1
-#        self.run_fast_rate = 2
-#        self.run_slow_move_offset = 2
+        mario.pos += Vector2(offset[0]*heading[0], offset[0]*heading[1])
 
 class Mario(GameEntity):
     IMG_UPDATE_RATE = 3
@@ -445,16 +442,6 @@ class Mario(GameEntity):
         speedx_direction = self.get_speedx_direction()
         self.heading[0] = speedx_direction
 
-#    def choose_state(self):
-#        self.counter += 1
-#
-#        if abs(self.acce_x) == ACCE_DEC_FAST:
-#            self.img_set = mario_setting.brake_img_set
-#            self.img_set_idx = 0
-#            return
-#        if abs(self.speed_x) < SPEED_WALK_MAX:
-#            self.rate = mario_setting.walk_rate
-#
     def debug(self, surface):
         y = 100
         status = "{}, {}, {}".format(self.acce_x, self.ctrl_x, self.speed_x)
@@ -463,7 +450,8 @@ class Mario(GameEntity):
         h = text.get_height()
         y += h
         state = self.state_machine.active_state
-        text = sys_font.render(state.state_name, True, (0, 0, 0))
+        text = sys_font.render("%s, %s"%(state.state_name, state.state_detail),
+                               True, (0, 0, 0))
         surface.blit(text, (16,y))
         h = text.get_height()
         y += h
@@ -479,8 +467,7 @@ class Mario(GameEntity):
         self.set_acce_x()
         self.set_speed_x()
         self.set_heading()
-        self.state_machine.choose_state()
-        self.state_machine.apply_state()
+        self.state_machine.think()
 
     def process_key(self, event):
         if event.type == KEYDOWN:
@@ -577,3 +564,4 @@ while True:
     #print "fps:", clock.get_fps()
 
     pygame.display.update()
+
