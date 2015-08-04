@@ -1,6 +1,8 @@
 import sys
-import pygame
 import logging
+import pygame_sdl2
+pygame_sdl2.import_as_pygame()
+import pygame
 from pygame.locals import *
 from gameobjects.vector2 import Vector2
 
@@ -41,6 +43,7 @@ class World(object):
         surface.fill(self.bg_color)
         self.render_with_etype(surface, EntityType.GROUND)
         self.render_with_etype(surface, EntityType.BACKGROUND)
+        self.render_with_etype(surface, EntityType.STILL)
         self.render_with_etype(surface, EntityType.MARIO)
 
     def exceed_border(self, mario):
@@ -59,40 +62,6 @@ class World(object):
             return True
         return False
 
-class State():
-    def __init__(self, name):
-        self.name = name
-    def do_actions(self):
-        pass
-    def check_conditions(self):
-        pass
-    def entry_actions(self):
-        pass
-    def exit_actions(self):
-        pass
-
-class StateMachine():
-    def __init__(self):
-        self.states = {}
-        self.active_state = None
-    
-    def add_state(self, state):
-        self.states[state.name] = state
-
-    def think(self):
-        if self.active_state is None:
-            return
-        self.active_state.do_actions()
-        new_state_name = self.active_state.check_conditions()
-        if new_state_name is not None:
-            self.set_state(new_state_name)
-
-    def set_state(self, new_state_name):
-        if self.active_state is not None:
-            self.active_state.exit_actions()
-        self.active_state = self.states[new_state_name]
-        self.active_state.entry_actions()
-
 class GameEntity(object):
     def __init__(self, world, pos, name, etype, img):
         self.world = world
@@ -100,7 +69,6 @@ class GameEntity(object):
         self.etype = etype
         self.img = img
         self.pos = Vector2(pos)
-        self.brain = StateMachine()
         self.eid = 0
 
     def render(self, surface):
@@ -109,35 +77,45 @@ class GameEntity(object):
         surface.blit(self.img, pos)
 
     def update(self):
-        self.brain.think()
+        pass
 
 class EntityName(object):
     GROUND = "ground"
     WOOD = "wood"
     MARIO = "mario"
+    PIPE = "pipe"
 
 class EntityType(object):
     GROUND = "ground"
-    BACKGROUND = "background"
+    BACKGROUND = "bg"
     MARIO = "mario"
+    STILL = "still"
 
 class GameRc(object):
     ground_block_png = "ground_block_16x16.png"
     wood_png = "wood_48x16.png"
+    pipe1_png = "pipe1_32x15.png"
+    pipe2_png = "pipe2_32x1.png"
+    pipe3_png = "pipe3_32x2.png"
     mario1_png = "mario1_12x16.png"
     mario2_png = "mario2_13x15.png"
     mario3_png = "mario3_15x16.png"
     mario4_png = "mario4_13_16.png"
     mario5_png = "mario5_13x16.png"
+    mario6_png = "mario6_16x16.png"
 
     def __init__(self):
         self.ground_block_img = get_img(self.ground_block_png)
         self.wood_img = get_img(self.wood_png)
+        self.pipe1_img = get_img(self.pipe1_png)
+        self.pipe2_img = get_img(self.pipe2_png)
+        self.pipe3_img = get_img(self.pipe3_png)
         self.mario1_img = get_img(self.mario1_png)
         self.mario2_img = get_img(self.mario2_png)
         self.mario3_img = get_img(self.mario3_png)
         self.mario4_img = get_img(self.mario4_png)
         self.mario5_img = get_img(self.mario5_png)
+        self.mario6_img = get_img(self.mario6_png)
 
 class Ground(GameEntity):
     def make_img(self, rows, columns):
@@ -162,6 +140,29 @@ class Wood(GameEntity):
     def __init__(self, world, pos, img):
         GameEntity.__init__(self, world, pos, EntityName.WOOD,
                             EntityType.BACKGROUND, img)
+
+class Pipe(GameEntity):
+    def make_img(self, level):
+        w, h1 = game_rc.pipe1_img.get_size()
+        h2 = game_rc.pipe2_img.get_height()
+        h3 = game_rc.pipe3_img.get_height()
+        h = h1 + h2 + h3*level
+
+        img = pygame.Surface((w, h), SRCALPHA)
+        y = 0
+        img.blit(game_rc.pipe1_img, (0, y))
+        y += h1
+        img.blit(game_rc.pipe2_img, (0, y))
+        y += h2
+        for i in xrange(0, level):
+            img.blit(game_rc.pipe3_img, (0, y))
+            y += h3
+        return img
+
+    def __init__(self, world, pos, level):
+        img = self.make_img(level)
+        GameEntity.__init__(self, world, pos, EntityName.PIPE,
+                            EntityType.STILL, img)
 
 class MarioState(object):
     def __init__(self, state_machine, state_name, img_set,
@@ -296,11 +297,132 @@ class MarioHitWallState(MarioState):
         MarioState.__init__(self, state_machine, state_name, img_set,
                             transform_rate, transform_offset, move_offset)
 
+class MarioFlyState(MarioState):
+    POWER_MIN = 2
+    POWER_MAX = 14
+    FULL_POWER_FRAMES = 7
+    POWER_MOVE_OFFSET = 4
+
+    def __init__(self, state_machine):
+        state_name = state_machine.fly_state_name
+        img_set = [game_rc.mario6_img]
+        transform_rate = 1
+        transform_offset = [0]
+        move_offset = 0
+        MarioState.__init__(self, state_machine, state_name, img_set,
+                            transform_rate, transform_offset, move_offset)
+        self.power = 0
+        self.power_data = []
+        # total_cycles/each_cycle_move_pixel/each_cycle_has_frames
+        #self.power_full_up_data = [(7, 3, 1), (7, 2, 1), (3, 1, 3), (6, 0, 1)]
+        self.power_full_up_data = [(7, 2, 1), (3, 1, 3), (6, 0, 1)]
+        self.power_down_data = [(2, 1, 1), (8, 3, 1), (0, 5, 1)]
+
+        self.power_data_idx = 0
+        self.total_frames = 0
+        self.cur_cycle = 0
+        self.cur_frame = 0
+        self.offset_x = 0
+        self.offset_y = 0
+
+    def entry_action_init_offset(self):
+        self.offset_y = self.POWER_MOVE_OFFSET
+        mario = self.state_machine.mario
+        speed_x = abs(mario.get_speed_x())
+        if speed_x > mario.SPEED_RUN_SLOW_MAX:
+            self.offset_x = 2
+        elif speed_x > mario.SPEED_WALK_MAX:
+            self.offset_x = 1
+        else:
+            self.offset_x = 0
+
+    def entry_action(self, img_idx):
+        MarioState.entry_action(self, img_idx)
+        self.power = 0
+        self.power_data = []
+        self.power_data_idx = 0
+        self.total_frames = 0
+        self.cur_cycle = 0
+        self.cur_frame = 0
+        self.entry_action_init_offset()
+
+    def set_power_data(self):
+        self.power = max(self.POWER_MIN, self.power)
+        self.power = min(self.POWER_MAX, self.power)
+        f = (float(self.power)/self.POWER_MAX)**2
+        up_data = map(lambda x:(max(int(x[0]*f), 1), x[1], x[2]),
+                      self.power_full_up_data)
+        self.power_data += up_data
+        self.power_data += self.power_down_data
+
+    def set_offset_y(self):
+        cur_data = self.power_data[self.power_data_idx]
+        if cur_data[2] > 1 and self.cur_frame != 0:
+            self.offset_y = 0
+        else:
+            self.offset_y = cur_data[1]
+
+    def run_cycle(self):
+        cur_data = self.power_data[self.power_data_idx]
+        self.total_frames += 1
+        self.cur_frame += 1
+        self.state_detail = "%d, %d, %d, %d"%(self.total_frames,
+                                              self.power_data_idx,
+                                              self.cur_cycle, self.cur_frame)
+
+        target_frames = cur_data[2]
+        if target_frames > 1 and self.cur_frame < target_frames:
+            return
+
+        self.cur_frame = 0
+        self.cur_cycle += 1
+
+        target_cycle = cur_data[0]
+        if target_cycle == 0 or self.cur_cycle < target_cycle:
+            return
+
+        self.cur_cycle = 0
+        self.power_data_idx += 1
+
+    def set_mario_speed_y(self):
+        mario = self.state_machine.mario
+        if self.power_data_idx < len(self.power_full_up_data):
+            mario.set_speed_y_up()
+        else:
+            mario.set_speed_y_down()
+
+    def power_inc_end(self):
+        mario = self.state_machine.mario
+        if self.power > self.POWER_MAX:
+            return True
+        if mario.get_ctrl_y() == Mario.DIRECTION_NONE:
+            return True
+        return False
+
+    def update(self):
+        self.set_mario_speed_y()
+        if self.power == self.FULL_POWER_FRAMES:
+            self.offset_y -= 1
+        self.power += 1
+        if self.power_inc_end() == False:
+            return;
+        if len(self.power_data) == 0:
+            self.set_power_data()
+        self.set_offset_y()
+        self.run_cycle()
+
+    def calc_move_offset(self):
+        return (self.offset_x, self.offset_y)
+
+    def exit_action(self):
+        self.state_machine.mario.zero_speed_y()
+
 class MarioStateMachine(object):
     stand_state_name = "stand_state"
     walk_state_name = "walk_state"
     brake_state_name = "brake_state"
     hit_wall_state_name = "hit_wall_state"
+    fly_state_name = "fly_state"
 
     def __init__(self, mario):
         self.mario = mario
@@ -309,6 +431,7 @@ class MarioStateMachine(object):
         self.add_state(MarioWalkState(self))
         self.add_state(MarioBrakeState(self))
         self.add_state(MarioHitWallState(self))
+        self.add_state(MarioFlyState(self))
 
         self.active_state = None
         self.think()
@@ -318,7 +441,9 @@ class MarioStateMachine(object):
 
     def decide_cur_state(self):
         mario = self.mario
-        if self.active_state is None or mario.speed_x == 0:
+        if mario.speed_y != 0:
+            return self.states[self.fly_state_name]
+        elif mario.speed_x == 0:
             return self.states[self.stand_state_name]
         elif mario.world.exceed_border(mario):
             return self.states[self.hit_wall_state_name]
@@ -354,10 +479,15 @@ class MarioStateMachine(object):
         self.apply_state()
 
     def update_mario_pos(self, offset):
-        #print "offset:", offset_x
         mario = self.mario
-        heading = mario.heading
-        mario.pos += Vector2(offset[0]*heading[0], offset[0]*heading[1])
+        mario.set_heading()
+        heading = mario.get_heading()
+        #print "offset:", offset, "heading:", heading
+        mario.pos += Vector2(offset[0]*heading[0], offset[1]*heading[1])
+        #TODO TEMP FIX
+        if mario.pos[1] > GROUND_Y:
+            mario.pos[1] = GROUND_Y
+            mario.zero_speed_y()
 
 class Mario(GameEntity):
     IMG_UPDATE_RATE = 3
@@ -366,10 +496,12 @@ class Mario(GameEntity):
     SPEED_RUN_FAST_MAX = 30
 
     ACCE_INC = 1.
-    ACCE_DEC_SLOW = 2
-    ACCE_DEC_FAST = 4
+    ACCE_DEC_SLOW = 1.
+    ACCE_DEC_FAST = 2.5
     DIRECTION_LEFT = -1
     DIRECTION_RIGHT = 1
+    DIRECTION_UP = -1
+    DIRECTION_DOWN = 1
     DIRECTION_NONE = 0
 
     ACCE_X_NORMAL = 1
@@ -381,6 +513,7 @@ class Mario(GameEntity):
         self.acce_x = 0
         self.acce_y = 0
         self.ctrl_x = 0
+        self.ctry_y = 0
         self.heading = Vector2(1, 0)
         self.pos = Vector2(MARIO_START_X, GROUND_Y)
 
@@ -402,13 +535,18 @@ class Mario(GameEntity):
         else:
             return self.DIRECTION_NONE
 
+    def get_speedy_direction(self):
+        if self.speed_y < 0:
+            return self.DIRECTION_UP
+        elif self.speed_y > 0:
+            return self.DIRECTION_DOWN
+        else:
+            return self.DIRECTION_NONE
+
     def set_acce_x(self):
         if self.speed_x == 0 and self.ctrl_x == 0:
             self.acce_x = 0
             return
-        if self.ctrl_x > self.DIRECTION_RIGHT or \
-           self.ctrl_x < self.DIRECTION_LEFT:
-            raise Exception("Unexpected ctrl_x %d", self.ctrl_x)
         speed_direction = self.get_speedx_direction()
         if self.ctrl_x != 0:
             if self.speed_x == 0 or self.ctrl_x == speed_direction:
@@ -436,14 +574,46 @@ class Mario(GameEntity):
                 self.speed_x += self.acce_x
         return
 
-    def set_heading(self):
+    def get_speed_x(self):
+        return self.speed_x
+
+    def zero_speed_y(self):
+        self.speed_y = 0
+
+    def set_speed_y_up(self):
+        self.speed_y = self.DIRECTION_UP
+
+    def set_speed_y_down(self):
+        self.speed_y = self.DIRECTION_DOWN
+
+    def get_ctrl_y(self):
+        return self.ctrl_y
+
+    def set_heading_x(self):
         if self.speed_x == 0:
+            self.heading[0] = 0
             return
-        speedx_direction = self.get_speedx_direction()
-        self.heading[0] = speedx_direction
+        else:
+            speedx_direction = self.get_speedx_direction()
+            self.heading[0] = speedx_direction
+
+    def set_heading_y(self):
+        if self.speed_y == 0:
+            self.heading[1] = 0
+            return
+        else:
+            speedy_direction = self.get_speedy_direction()
+            self.heading[1] = speedy_direction
+
+    def set_heading(self):
+        self.set_heading_x()
+        self.set_heading_y()
+
+    def get_heading(self):
+        return self.heading
 
     def debug(self, surface):
-        y = 100
+        y = 40
         status = "{}, {}, {}".format(self.acce_x, self.ctrl_x, self.speed_x)
         text = sys_font.render(status, True, (0, 0, 0))
         surface.blit(text, (16,y))
@@ -461,12 +631,11 @@ class Mario(GameEntity):
 
     def render(self, surface):
         GameEntity.render(self, surface)
-        self.debug(surface)
+        #self.debug(surface)
 
     def update(self):
         self.set_acce_x()
         self.set_speed_x()
-        self.set_heading()
         self.state_machine.think()
 
     def process_key(self, event):
@@ -478,14 +647,23 @@ class Mario(GameEntity):
     def process_keydown(self, event):
         if event.key == K_LEFT:
             self.ctrl_x += self.DIRECTION_LEFT
+            self.ctrl_x = max(self.ctrl_x, self.DIRECTION_LEFT)
         elif event.key == K_RIGHT:
             self.ctrl_x += self.DIRECTION_RIGHT
+            self.ctrl_x = min(self.ctrl_x, self.DIRECTION_RIGHT)
+        elif event.key == K_f:
+            self.ctrl_y = self.DIRECTION_UP
+            self.set_speed_y_up()
 
     def process_keyup(self, event):
         if event.key == K_LEFT:
             self.ctrl_x -= self.DIRECTION_LEFT
+            self.ctrl_x = min(self.ctrl_x, self.DIRECTION_RIGHT)
         elif event.key == K_RIGHT:
             self.ctrl_x -= self.DIRECTION_RIGHT
+            self.ctrl_x = max(self.ctrl_x, self.DIRECTION_LEFT)
+        elif event.key == K_f:
+            self.ctrl_y = self.DIRECTION_NONE
 
 def construct_world():
     world = World()
@@ -498,7 +676,10 @@ def construct_world():
 
     wood = Wood(world, (0, GROUND_Y), game_rc.wood_img)
     world.add_entity(wood)
-    
+
+    pipe = Pipe(world, (MARIO_START_X+16, GROUND_Y), level=24)
+    world.add_entity(pipe)
+
     return world
 
 def get_img(path):
@@ -507,7 +688,8 @@ def get_img(path):
 SCREEN_BK_COLOR = (148, 148, 255, 255)
 
 ORIGINAL_SIZE = (256, 240)
-ENARGE_SCALE = 2
+ENARGE_SCALE = 3
+FRAME_RATE = 60
 SCREEN_SIZE = (ORIGINAL_SIZE[0]*ENARGE_SCALE, ORIGINAL_SIZE[1]*ENARGE_SCALE)
 
 GROUND_BLOCK_ROWS = 2
@@ -516,52 +698,66 @@ GROUND_Y = ORIGINAL_SIZE[1] - GROUND_BLOCK_ROWS*GROUND_BLOCK_H
 
 MARIO_START_X = ORIGINAL_SIZE[0]/4
 
-logging.basicConfig(level=logging.DEBUG, filename="dbg.log",\
-                    format="%(asctime)s %(levelname)s - %(message)s")
-
+game_rc = None
+sys_font = None
 time_passed = 0
 
-pygame.init()
-screen = pygame.display.set_mode(SCREEN_SIZE, 0, 24)
-sscreen = pygame.Surface(ORIGINAL_SIZE, 0, 32)
+def run():
+    logging.basicConfig(level=logging.DEBUG, filename="dbg.log",\
+                        format="%(asctime)s %(levelname)s - %(message)s")
 
-sys_font = pygame.font.SysFont(None, 24)
+    global time_passed
+    time_passed = 0
 
-game_rc = GameRc()
+    pygame.init()
+    #flags = pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.FULLSCREEN
+    flags = 0
+    screen = pygame.display.set_mode(SCREEN_SIZE, flags, 24)
+    sscreen = pygame.Surface(ORIGINAL_SIZE, 0, 32)
 
-mario = None
-world = construct_world()
+    global sys_font
+    #sys_font = pygame.font.SysFont("Arial", 24)
 
-world.render(sscreen)
-pygame.transform.smoothscale(sscreen.convert(), SCREEN_SIZE, screen)
+    global game_rc
+    game_rc = GameRc()
 
-pygame.display.update()
-
-clock = pygame.time.Clock()
-
-do_save_screen = False
-save_screen_idx = 0
-
-while True:
-    for event in pygame.event.get():
-        if event.type == QUIT:
-            pygame.quit()
-            sys.exit()
-        if event.type == KEYDOWN or event.type == KEYUP:
-            if event.key == K_SPACE:
-                world.mario.speed_x = world.mario.SPEED_RUN_FAST_MAX
-                world.mario.acce_x = world.mario.ACCE_INC
-                world.mario.ctrl_x = 1
-            else:
-                world.process_key(event)
-
-    time_passed = clock.tick(40)
-    world.update()
+    mario = None
+    world = construct_world()
 
     world.render(sscreen)
     pygame.transform.smoothscale(sscreen.convert(), SCREEN_SIZE, screen)
 
-    #print "fps:", clock.get_fps()
+    pygame.display.flip()
 
-    pygame.display.update()
+    clock = pygame.time.Clock()
 
+    do_save_screen = False
+    save_screen_idx = 0
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == KEYDOWN and event.key == K_ESCAPE:
+                pygame.quit()
+                sys.exit()
+            if event.type == KEYDOWN or event.type == KEYUP:
+                world.process_key(event)
+
+        #scalex1, tick 60, scalex2, tick 40
+        time_passed = clock.tick(FRAME_RATE)
+        world.update()
+
+        world.render(sscreen)
+        pygame.transform.smoothscale(sscreen.convert(), SCREEN_SIZE, screen)
+
+        #print "fps:", clock.get_fps()
+
+        #pygame.display.update()
+        pygame.display.flip()
+
+if __name__ == "__main__":
+    run()
+    #import profile
+    #profile.run("run()")
