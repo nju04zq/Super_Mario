@@ -1,6 +1,17 @@
 Notes for python Super Mario project
 =====
 
+How to run on Windows 7
+----
+1. Download & install python 2.7.10 [here](https://www.python.org/downloads/)
+2. Download & install pygame 1.9.1 [here](http://pygame.org/ftp/pygame-1.9.1.win32-py2.7.msi)
+3. Install python package gameobjects. In windows cmd, run "easy_install gameobjects"
+4. Download all the project files. Then go to the directory in windows cmd, issue "python super_mario.py"
+
+
+Development Notes
+=====
+
 2015/07/24
 -----
 
