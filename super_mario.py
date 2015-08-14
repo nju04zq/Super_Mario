@@ -31,10 +31,10 @@ class World(object):
             return None
 
     def update(self):
-        self.mario.update()
         for entity in self.entities.values():
             if entity.eid != self.mario.eid:
                 entity.update()
+        self.mario.update()
 
     def process_key(self, event):
         #only supported on pygame_sdl2
@@ -53,30 +53,31 @@ class World(object):
     def render(self, surface):
         surface.fill(self.bg_color)
         render_etypes = [EntityType.GROUND, EntityType.BACKGROUND,
-                         EntityType.STILL, EntityType.MARIO]
+                         EntityType.STILL, EntityType.FOREGROUND,
+                         EntityType.BODY, EntityType.ENEMY,
+                         EntityType.MARIO]
         for etype in render_etypes:
             self.render_with_etype(surface, etype)
 
-    def exceed_border(self, mario):
-        w, h = mario.img.get_size()
-        ul_x = mario.pos[0]
-        ul_y = mario.pos[1] - h + 1
-        br_x = mario.pos[0] + w - 1
-        br_y = mario.pos[1]
+    def exceed_border(self, entity):
+        w, h = entity.img.get_size()
+        ul_x = entity.pos[0]
+        ul_y = entity.pos[1] - h + 1
+        br_x = entity.pos[0] + w - 1
+        br_y = entity.pos[1]
         left_border = 1
         if ul_x <= left_border:
-            mario.pos[0] = left_border
+            entity.pos[0] = left_border
             return True
         right_border = ORIGINAL_SIZE[0]-2
         if br_x >= right_border:
-            mario.pos[0] = right_border - w + 1
+            entity.pos[0] = right_border - w + 1
             return True
         return False
 
-    def make_collision_entity_list(self, entity_in):
+    def make_collision_entity_list(self, entity_in, target_etypes):
         entity_list = []
 
-        target_etypes = [EntityType.GROUND, EntityType.STILL, EntityType.MARIO]
         for entity in self.entities.itervalues():
             if entity.etype not in target_etypes:
                 continue
@@ -89,7 +90,9 @@ class World(object):
 
     def is_not_on_ground(self, entity):
         entity.rect.move_ip((0, 1))
-        collision_list = self.make_collision_entity_list(entity)
+        etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY,\
+                  EntityType.MARIO] #TODO remove mario
+        collision_list = self.make_collision_entity_list(entity, etypes)
         entity.rect.move_ip((0, -1))
 
         if len(collision_list) == 0:
@@ -134,7 +137,6 @@ class World(object):
             offset_y = entity1.rect.bottom - entity.rect.top
         entity.update_pos((0, offset_y), with_direction=True)
 
-
     def calc_collision_align_x(self, entity, direction):
         collision_align = 0
 
@@ -155,6 +157,27 @@ class World(object):
 
         return collision_align
 
+    def is_out_of_screen(self, entity):
+        #do not conisder out of top
+        rect = entity.rect
+        if rect.right < 0 or rect.left > ORIGINAL_SIZE[0] or \
+           rect.bottom < 0 or rect.top > ORIGINAL_SIZE[1]:
+            return True
+        else:
+            return False
+
+    def push_on_top_entity(self, entity):
+        entity.rect.move_ip((0, -1))
+
+        etypes = [EntityType.ENEMY]
+        collision_list = self.make_collision_entity_list(entity, etypes)
+        
+        for entity1 in collision_list:
+            if entity1.rect.top < entity.rect.top < entity1.rect.bottom:
+                entity1.handle_push()
+        
+        entity.rect.move_ip((0, 1))
+
 class GameEntity(object):
     def __init__(self, world, pos, name, etype, img):
         w, h = img.get_size()
@@ -166,6 +189,12 @@ class GameEntity(object):
         self.heading = Vector2(1, 0)
         self.rect = build_rect_from_pos(pos, w, h)
         self.eid = 0
+
+    def set_img(self, img):
+        self.img = img
+        #del self.rect
+        w, h = self.img.get_size()
+        self.rect = build_rect_from_pos(self.pos, w, h)
 
     def render(self, surface):
         h = self.img.get_height()
@@ -208,7 +237,10 @@ class GameEntity(object):
         self.pos += offset_vector
         self.rect.move_ip(offset_vector)
 
-    def collision_pushed(self):
+    def handle_push(self):
+        pass
+
+    def handle_stamp(self):
         pass
 
 class EntityName(object):
@@ -220,12 +252,16 @@ class EntityName(object):
     PLATE = "plate"
     ROCK = "rock"
     CLOUD = "cloud"
+    GOOMBA = "goomba"
 
 class EntityType(object):
     GROUND = "ground"
     BACKGROUND = "bg"
+    FOREGROUND = "fg"
     MARIO = "mario"
     STILL = "still"
+    ENEMY = "enemy"
+    BODY = "body"
 
 class GameRc(object):
     rock_png = "rock_16x16.png"
@@ -249,6 +285,12 @@ class GameRc(object):
     mario4_png = "mario4_13_16.png"
     mario5_png = "mario5_13x16.png"
     mario6_png = "mario6_16x16.png"
+    goomba1_png = "goomba1_16x16.png"
+    goomba2_png = "goomba2_16x7.png"
+    koopa1_png = "koopa1_16x23.png"
+    koopa2_png = "koopa2_16x24.png"
+    koopa3_png = "koopa3_16x14.png"
+    koopa4_png = "koopa4_16x14.png"
 
     def __init__(self):
         self.rock_img = get_img(self.rock_png)
@@ -272,6 +314,12 @@ class GameRc(object):
         self.mario4_img = get_img(self.mario4_png)
         self.mario5_img = get_img(self.mario5_png)
         self.mario6_img = get_img(self.mario6_png)
+        self.goomba1_img = get_img(self.goomba1_png)
+        self.goomba2_img = get_img(self.goomba2_png)
+        self.koopa1_img = get_img(self.koopa1_png)
+        self.koopa2_img = get_img(self.koopa2_png)
+        self.koopa3_img = get_img(self.koopa3_png)
+        self.koopa4_img = get_img(self.koopa4_png)
 
 class GameDef(object):
     DIRECTION_LEFT = -1
@@ -408,8 +456,9 @@ class Brick(GameEntity):
 
         self.bounce_ctrl = StillBounceCtrl(self)
     
-    def collision_pushed(self):
+    def handle_push(self):
         self.bounce_ctrl.start()
+        self.world.push_on_top_entity(self)
 
     def update(self):
         self.bounce_ctrl.update()
@@ -431,12 +480,13 @@ class Plate(GameEntity):
         self.shine_cur_frame = 0
         self.bounce_ctrl = StillBounceCtrl(self)
 
-    def collision_pushed(self):
+    def handle_push(self):
         if self.is_dead == True:
             return
         self.bounce_ctrl.start()
         self.is_dead = True
         self.img = game_rc.plate4_img
+        self.world.push_on_top_entity(self)
 
     def shine(self):
         self.img = self.img_set[self.shine_idx]
@@ -459,6 +509,296 @@ class Plate(GameEntity):
             self.bounce_ctrl.update()
         else:
             self.shine()
+
+class GoombaState(object):
+    def __init__(self, state_machine, state_name):
+        self.state_machine = state_machine
+        self.goomba = state_machine.goomba
+        self.state_name = state_name
+
+        self.img_set = []
+        self.img_idx = 0
+
+    def run(self):
+        pass
+
+    def set_goomba_img(self):
+        self.goomba.set_img(self.img_set[self.img_idx])
+
+    def entry_action(self):
+        self.set_goomba_img()
+
+    def handle_stamp(self):
+        return None
+
+    def handle_push(self):
+        return None
+
+class GoombaNormalState(GoombaState):
+    MOVE_DOWN_MAX = 5
+
+    def __init__(self, state_machine):
+        GoombaState.__init__(self, state_machine,
+                             state_machine.normal_state_name)
+        
+        img_flipped = pygame.transform.flip(game_rc.goomba1_img, True, False)
+        self.img_set = [img_flipped, game_rc.goomba1_img]
+        self.img_idx = 0
+        self.img_cnt = len(self.img_set)
+
+        self.offset_x = 1
+        self.move_counter = 0
+        self.move_rate = 2
+
+        self.flip_counter = 0
+        self.flip_rate = 8
+
+        self.fall_data = [(2, 1), (8, 3), (0, 5)]
+        self.fall_cycle = 0
+        self.fall_cur_frame = 0
+
+    def calc_offset_x(self):
+        self.move_counter += 1
+        self.move_counter %= self.move_rate
+        if self.move_counter == 0:
+            return self.offset_x
+        else:
+            return 0
+
+    def calc_offset_y(self):
+        if self.goomba.speed_y == 0:
+            return 0
+
+        cur_fall_data = self.fall_data[self.fall_cycle]
+        offset_y = cur_fall_data[1]
+
+        self.fall_cur_frame += 1
+        if self.fall_cur_frame < cur_fall_data[0]:
+            return offset_y
+        
+        self.fall_cur_frame = 0
+        if cur_fall_data[0] > 0:
+            self.fall_cycle += 1
+
+        return offset_y
+
+    def move_goomba(self):
+        offset_x = self.calc_offset_x() * self.goomba.heading_x
+        offset_y = self.calc_offset_y()
+        self.goomba.update_pos((offset_x, offset_y), with_direction=True)
+
+    def flip_img(self):
+        self.flip_counter += 1
+        self.flip_counter %= self.flip_rate
+
+        if self.flip_counter == 0:
+            self.img_idx += 1
+        self.img_idx %= self.img_cnt
+
+        self.set_goomba_img()
+
+    def run(self):
+        self.move_goomba()
+        self.flip_img()
+        self.check_collision()
+        self.check_on_ground()
+        self.check_exceed_border()
+
+    def check_exceed_border(self):
+        goomba = self.goomba
+        world = goomba.world
+
+        if world.exceed_border(goomba) == False:
+            return
+
+        if goomba.rect.left == 1:
+            goomba.heading_x = 1
+        else:
+            goomba.heading_x = -1
+
+    def check_on_ground(self):
+        goomba = self.goomba
+        world = goomba.world
+        if world.is_not_on_ground(goomba):
+            goomba.speed_y = 1
+
+    def check_collision(self):
+        world = self.goomba.world
+
+        etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY,\
+                  EntityType.MARIO, EntityType.BODY] #TODO remove mario
+        collision_list = world.make_collision_entity_list(self.goomba, \
+                                                          etypes)
+        if len(collision_list) == 0:
+            return
+
+        self.check_collision_y(collision_list)
+        self.check_collision_x(collision_list)
+
+    def check_collision_y(self, collision_list):
+        goomba = self.goomba
+        if goomba.speed_y == 0:
+            return
+        
+        world = goomba.world
+        entity = world.is_on_ground(goomba, collision_list)
+        if entity is None:
+            return
+
+        offset_y = entity.rect.top - goomba.rect.bottom
+        if abs(offset_y) > self.MOVE_DOWN_MAX:
+            return
+
+        goomba.speed_y = 0
+        world.fix_collision_y(goomba, entity, GameDef.DIRECTION_UP)
+
+    def check_collision_x(self, collision_list):
+        goomba = self.goomba
+        world = goomba.world
+
+        (entity, direction) = world.check_collision_x(goomba, collision_list)
+        if entity is None:
+            return
+
+        if pygame.Rect.colliderect(goomba.rect, entity.rect) == False:
+            return
+
+        world.fix_collision_x(goomba, entity, direction)
+        goomba.heading_x = -goomba.heading_x
+
+    def handle_stamp(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.body_state_name]
+
+    def handle_push(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+class GoombaDeadState(GoombaState):
+    def __init__(self, state_machine):
+        GoombaState.__init__(self, state_machine,
+                             state_machine.dead_state_name)
+
+        img = pygame.transform.flip(game_rc.goomba1_img, False, True)
+        self.img_set = [img]
+        self.img_idx = 0
+
+        self.offset_x = 0
+        self.offset_y = 0
+
+        self.offset_y_data = [(6, -2), (3, -1), (3, 0), (2, 1), (8, 3), (0, 5)]
+        self.offset_y_idx = 0
+        self.offset_y_frame = 0
+    
+    def entry_action(self):
+        GoombaState.entry_action(self)
+        
+        goomba = self.goomba
+        mario = goomba.world.mario
+
+        if mario.rect.center[0] > goomba.rect.center[0]:
+            self.offset_x = -1
+        else:
+            self.offset_x = 1
+
+    def calc_offset_y(self):
+        offset_data = self.offset_y_data[self.offset_y_idx]
+        self.offset_y = offset_data[1]
+
+        self.offset_y_frame += 1
+        if self.offset_y_frame < offset_data[0]:
+            return
+
+        self.offset_y_frame = 0
+        if offset_data[0] > 0:
+            self.offset_y_idx += 1
+
+    def run(self):
+        goomba = self.goomba
+        world = goomba.world
+
+        self.calc_offset_y()
+        goomba.update_pos((self.offset_x, self.offset_y), with_direction=True)
+        if world.is_out_of_screen(goomba):
+            world.remove_entity(goomba)
+
+class GoombaBodyState(GoombaState):
+    def __init__(self, state_machine):
+        GoombaState.__init__(self, state_machine,
+                             state_machine.body_state_name)
+
+        self.img_set = [game_rc.goomba2_img]
+        self.img_idx = 0
+
+        self.live_frames = 32
+
+    def run(self):
+        goomba = self.goomba
+        world = goomba.world
+
+        self.live_frames -= 1
+        if self.live_frames == 0:
+            world.remove_entity(goomba)
+
+class GoombaStateMachine(object):
+    normal_state_name = "normal_state"
+    dead_state_name = "dead_state"
+    body_state_name = "body_state"
+
+    def __init__(self, goomba):
+        self.goomba = goomba
+        self.states = {}
+
+        self.add_state(GoombaNormalState(self))
+        self.add_state(GoombaDeadState(self))
+        self.add_state(GoombaBodyState(self))
+
+        self.active_state = None
+        self.switch_to(self.states[self.normal_state_name])
+
+    def add_state(self, state):
+        self.states[state.state_name] = state
+
+    def switch_to(self, state):
+        self.active_state = state
+        self.active_state.entry_action()
+
+    def think(self):
+        self.active_state.run()
+
+    def handle_stamp(self):
+        new_state = self.active_state.handle_stamp()
+        if new_state is not None:
+            self.goomba.etype = EntityType.BODY
+            self.switch_to(new_state)
+
+    def handle_push(self):
+        new_state = self.active_state.handle_push()
+        if new_state is not None:
+            self.goomba.etype = EntityType.FOREGROUND
+            self.switch_to(new_state)
+
+class Goomba(GameEntity):
+    def __init__(self, world, pos):
+        GameEntity.__init__(self, world, pos, EntityName.GOOMBA,
+                            EntityType.ENEMY, game_rc.goomba1_img)
+
+        self.heading_x = -1
+        self.speed_x = 1 #no use, just x/y pair
+        self.speed_y = 0 #0/1, indicate move on y
+        self.state_machine = GoombaStateMachine(self)
+    
+    def set_img(self, img):
+        self.img = img
+
+    def update(self):
+        self.state_machine.think()
+
+    def handle_stamp(self):
+        self.state_machine.handle_stamp()
+
+    def handle_push(self):
+        self.state_machine.handle_push()
 
 class MarioState(object):
     def __init__(self, state_machine, state_name, img_set,
@@ -593,7 +933,15 @@ class MarioStandState(MarioState):
             return None
 
     def collision_state_transform(self, collision_list):
-        return None
+        state_machine = self.state_machine
+        mario = state_machine.mario
+        world = mario.world
+        states = state_machine.states
+
+        if world.is_not_on_ground(mario):
+            return states[state_machine.fall_state_name]
+        else:
+            return None
 
 class MarioWalkState(MarioState):
     state_detail_walk = "normal"
@@ -686,6 +1034,12 @@ class MarioBrakeState(MarioState):
         MarioState.__init__(self, state_machine, state_name, img_set,
                             transform_rate, transform_offset, move_offset)
 
+        self.end_frames = 12
+
+    def entry_action(self, img_idx):
+        MarioState.entry_action(self, img_idx)
+        self.end_frames = 12
+
     def move_state_transform(self):
         state_machine = self.state_machine
         mario = state_machine.mario
@@ -697,9 +1051,12 @@ class MarioBrakeState(MarioState):
         if world.is_not_on_ground(mario):
             return states[state_machine.fall_state_name]
 
+        if speed_x == 0:
+            self.end_frames -= 1
+
         if speed_y != 0:
             return states[state_machine.fly_state_name]
-        elif speed_x == 0:
+        elif speed_x == 0 and self.end_frames <= 0:
             return states[state_machine.stand_state_name]
         elif abs(acce_x) != mario.ACCE_DEC_FAST:
             return states[state_machine.walk_state_name]
@@ -908,6 +1265,24 @@ class MarioFlyState(MarioState):
     def move_state_transform(self):
         return None
 
+    def stamp_collision_list(self, collision_list):
+        mario = self.state_machine.mario
+
+        stamp_enemy = False
+        for entity in collision_list:
+            offset_y = entity.rect.top - mario.rect.bottom
+            if abs(offset_y) > self.MOVE_DOWN_MAX_OFFSET:
+                continue
+            if mario.rect.top < entity.rect.top < mario.rect.bottom:
+                if entity.etype == EntityType.ENEMY:
+                    stamp_enemy = True
+                entity.handle_stamp()
+
+        if stamp_enemy:
+            mario.set_speed_y_up()
+            direction = mario.get_speedx_direction()
+            mario.set_speed_x(mario.SPEED_RUN_FAST_MAX*direction)
+
     def collision_state_transform_y(self, collision_list):
         state_machine = self.state_machine
         mario = state_machine.mario
@@ -916,6 +1291,8 @@ class MarioFlyState(MarioState):
         entity = world.is_on_ground(mario, collision_list)
         if entity == None:
             return None
+
+        self.stamp_collision_list(collision_list)
 
         direction = GameDef.DIRECTION_UP
         collision_align = world.calc_collision_align_y(entity, direction)
@@ -928,8 +1305,11 @@ class MarioFlyState(MarioState):
         return state_machine.states[state_machine.stand_state_name]
 
     def push_collision_entities(self, entity_list):
+        mario = self.state_machine.mario
         for entity in entity_list:
-            entity.collision_pushed()
+            dist = abs(mario.rect.center[0]-entity.rect.center[0])
+            if dist <= 8:
+                entity.handle_push()
 
     def check_collision_push(self, collision_list):
         state_machine = self.state_machine
@@ -1024,9 +1404,10 @@ class MarioFlyState(MarioState):
 
     def exit_action(self):
         mario = self.state_machine.mario
-        mario.zero_speed_y()
-        speed_x = mario.get_speed_x()/2
-        mario.set_speed_x(speed_x)
+        if mario.speed_y == GameDef.DIRECTION_DOWN:
+            mario.zero_speed_y() #if up, it's bounce case
+            speed_x = mario.get_speed_x()/2
+            mario.set_speed_x(speed_x)
 
 class MarioFallState(MarioState):
     MOVE_DOWN_MAX_OFFSET = 5
@@ -1118,6 +1499,24 @@ class MarioFallState(MarioState):
     def move_state_transform(self):
         return None
 
+    def stamp_collision_list(self, collision_list):
+        mario = self.state_machine.mario
+
+        stamp_enemy = False
+        for entity in collision_list:
+            offset_y = entity.rect.top - mario.rect.bottom
+            if abs(offset_y) > self.MOVE_DOWN_MAX_OFFSET:
+                continue
+            if mario.rect.top < entity.rect.top < mario.rect.bottom:
+                if entity.etype == EntityType.ENEMY:
+                    stamp_enemy = True
+                entity.handle_stamp()
+
+        if stamp_enemy:
+            direction = mario.get_speedx_direction()
+            mario.set_speed_x(mario.SPEED_RUN_SLOW_MAX*direction)
+            mario.set_speed_y_up()
+
     def collision_state_transform_y(self, collision_list):
         state_machine = self.state_machine
         mario = state_machine.mario
@@ -1126,6 +1525,8 @@ class MarioFallState(MarioState):
         entity = world.is_on_ground(mario, collision_list)
         if entity == None:
             return None
+
+        self.stamp_collision_list(collision_list)
 
         direction = GameDef.DIRECTION_UP
         collision_align = world.calc_collision_align_y(entity, direction)
@@ -1194,9 +1595,10 @@ class MarioFallState(MarioState):
 
     def exit_action(self):
         mario = self.state_machine.mario
-        mario.zero_speed_y()
-        speed_x = mario.get_speed_x()/2
-        mario.set_speed_x(speed_x)
+        if mario.speed_y == GameDef.DIRECTION_DOWN:
+            mario.zero_speed_y() #if up, it's bounce case
+            speed_x = mario.get_speed_x()/2
+            mario.set_speed_x(speed_x)
 
 class MarioStateMachine(object):
     stand_state_name = "stand_state"
@@ -1248,6 +1650,12 @@ class MarioStateMachine(object):
         if next_state is not None:
             self.switch_state(next_state)
 
+    def make_collision_entity_list(self):
+        etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY]
+        collision_list = self.world.make_collision_entity_list(self.mario,\
+                                                               etypes)
+        return collision_list
+
     def think(self):
         self.active_state.update_mario_due_ctrl_x()
         self.active_state.update_mario_due_ctrl_y()
@@ -1256,7 +1664,7 @@ class MarioStateMachine(object):
         self.active_state.update()
         self.update_mario_pos()
 
-        collision_list = self.world.make_collision_entity_list(self.mario)
+        collision_list = self.make_collision_entity_list()
         new_state = self.active_state.collision_state_transform(collision_list)
         if new_state != None:
             self.switch_state(new_state)
@@ -1334,13 +1742,9 @@ class Mario(GameEntity):
                             EntityType.MARIO, self.img)
 
     def set_img(self, img):
-        self.img = img
         if self.heading[0] == GameDef.DIRECTION_LEFT:
-            self.img = pygame.transform.flip(img, True, False)
-
-        #del self.rect
-        w, h = self.img.get_size()
-        self.rect = build_rect_from_pos(self.pos, w, h)
+            img = pygame.transform.flip(img, True, False)
+        GameEntity.set_img(self, img)
 
     def get_speedx_direction(self):
         if self.speed_x < 0:
@@ -1485,14 +1889,24 @@ def construct_world():
     pipe = Pipe(world, (x, GROUND_Y), level=8)
     world.add_entity(pipe)
 
+#####bottom plate + brick#####
     x += (32+16)
     plate = Plate(world, (x, GROUND_Y-20))
     world.add_entity(plate)
 
+    rock = Rock(world, (x, GROUND_Y-20-16))
+    world.add_entity(rock)
+
     x += 16
+#    goomba = Goomba(world, (x, GROUND_Y))
+#    world.add_entity(goomba)
+
     brick_cnt = 3
     for i in xrange(brick_cnt):
-        brick = Brick(world, (x, GROUND_Y-20))
+        if i == 1:
+            brick = Plate(world, (x, GROUND_Y-20))
+        else:
+            brick = Brick(world, (x, GROUND_Y-20))
         world.add_entity(brick)
         x += 16
     
@@ -1500,19 +1914,32 @@ def construct_world():
     pipe = Pipe(world, (x, GROUND_Y), level=24)
     world.add_entity(pipe)
 
+#####right side rock#####
     x -= 32
+    rock = Rock(world, (x, 100-16))
+    world.add_entity(rock)
+
     rock_cnt = 6
     for i in xrange(rock_cnt):
         rock = Rock(world, (x, 100))
         world.add_entity(rock)
         x += 16
-    
+
+    rock = Rock(world, (x-16, 100-16))
+    world.add_entity(rock)
+
+    goomba = Goomba(world, (x-16, 100-16+1-20))
+    world.add_entity(goomba)
+
+#####left side rock#####
     x = 0
     rock_cnt = 6
     for i in xrange(rock_cnt):
         rock = Rock(world, (x, 120))
         world.add_entity(rock)
         x += 16
+
+#####left side brick#####
     x = 32
     brick_cnt = 3
     for i in xrange(brick_cnt):
@@ -1539,6 +1966,26 @@ def build_rect_from_pos(pos, w, h):
     left = pos[0]
     top = pos[1] - h
     return pygame.Rect((left, top), (w, h))
+
+counter = 0
+def generate_enemy(world):
+    goomba_max_cnt = 2
+    goomba_cnt = 0
+
+    global counter
+    counter += 1
+    counter %= 60
+    if counter != 0:
+        return
+
+    for entity in world.entities.itervalues():
+        if entity.name == EntityName.GOOMBA:
+            goomba_cnt += 1
+
+    if goomba_cnt < goomba_max_cnt: 
+        #goomba = Goomba(world, (230, 60))
+        goomba = Goomba(world, (144, 160))
+        world.add_entity(goomba)
 
 SCREEN_BK_COLOR = (148, 148, 255, 255)
 
@@ -1603,6 +2050,8 @@ def run():
         #scalex1, tick 60, scalex2, tick 40
         time_passed = clock.tick(FRAME_RATE)
         world.update()
+
+        generate_enemy(world)
 
         world.render(sscreen)
         pygame.transform.smoothscale(sscreen.convert(), SCREEN_SIZE, screen)
