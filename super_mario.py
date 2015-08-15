@@ -169,10 +169,13 @@ class World(object):
     def push_on_top_entity(self, entity):
         entity.rect.move_ip((0, -1))
 
-        etypes = [EntityType.ENEMY]
+        etypes = [EntityType.ENEMY, EntityType.STILL]
         collision_list = self.make_collision_entity_list(entity, etypes)
         
         for entity1 in collision_list:
+            if entity1.etype == EntityType.STILL and \
+               entity1.name != EntityName.KOOPA:
+                continue
             if entity1.rect.top < entity.rect.top < entity1.rect.bottom:
                 entity1.handle_push()
         
@@ -210,30 +213,28 @@ class GameEntity(object):
     def update_heading(self):
         pass
 
-    def exceed_left_border_fix(self, offset):
-        offset_x = offset[0]
-        offset_y = offset[1]
-        if (self.rect.left + offset[0]*self.heading[0]) < 0:
-            offset_x = self.rect.left
-        return (offset_x, offset_y)
-
-    def exceed_right_border_fix(self, offset):
-        offset_x = offset[0]
-        offset_y = offset[1]
+    def exceed_border_fix(self, offset_x):
         right_border = ORIGINAL_SIZE[0] - 1
-        if (self.rect.right + offset[0]*self.heading[0]) >= right_border:
+        if (self.rect.left + offset_x) < 0:
+            offset_x = -self.rect.left
+        if (self.rect.right + offset_x) >= right_border:
             offset_x = right_border - self.rect.right
+        return offset_x
+
+    def calc_offset(self, offset, heading):
+        offset_x, offset_y = offset[0]*heading[0], offset[1]*heading[1]
+        offset_x = self.exceed_border_fix(offset_x)
         return (offset_x, offset_y)
 
     def update_pos(self, offset, with_direction=False):
         self.update_heading()
-        offset = self.exceed_left_border_fix(offset)
-        offset = self.exceed_right_border_fix(offset)
         if with_direction == False:
             heading = self.heading
         else:
             heading = (1, 1)
-        offset_vector = Vector2(offset[0]*heading[0], offset[1]*heading[1])
+        
+        offset = self.calc_offset(offset, heading)
+        offset_vector = Vector2(offset[0], offset[1])
         self.pos += offset_vector
         self.rect.move_ip(offset_vector)
 
@@ -241,6 +242,12 @@ class GameEntity(object):
         pass
 
     def handle_stamp(self):
+        pass
+
+    def handle_kick(self):
+        pass
+
+    def get_shot(self):
         pass
 
 class EntityName(object):
@@ -253,6 +260,7 @@ class EntityName(object):
     ROCK = "rock"
     CLOUD = "cloud"
     GOOMBA = "goomba"
+    KOOPA = "koopa"
 
 class EntityType(object):
     GROUND = "ground"
@@ -534,6 +542,9 @@ class GoombaState(object):
     def handle_push(self):
         return None
 
+    def get_shot(self):
+        return None
+
 class GoombaNormalState(GoombaState):
     MOVE_DOWN_MAX = 5
 
@@ -556,6 +567,10 @@ class GoombaNormalState(GoombaState):
         self.fall_data = [(2, 1), (8, 3), (0, 5)]
         self.fall_cycle = 0
         self.fall_cur_frame = 0
+
+    def entry_action(self):
+        GoombaState.entry_action(self)
+        self.goomba.etype = EntityType.ENEMY
 
     def calc_offset_x(self):
         self.move_counter += 1
@@ -583,7 +598,7 @@ class GoombaNormalState(GoombaState):
         return offset_y
 
     def move_goomba(self):
-        offset_x = self.calc_offset_x() * self.goomba.heading_x
+        offset_x = self.calc_offset_x() * self.goomba.heading[0]
         offset_y = self.calc_offset_y()
         self.goomba.update_pos((offset_x, offset_y), with_direction=True)
 
@@ -612,9 +627,9 @@ class GoombaNormalState(GoombaState):
             return
 
         if goomba.rect.left == 1:
-            goomba.heading_x = 1
+            goomba.heading[0] = 1
         else:
-            goomba.heading_x = -1
+            goomba.heading[0] = -1
 
     def check_on_ground(self):
         goomba = self.goomba
@@ -664,13 +679,17 @@ class GoombaNormalState(GoombaState):
             return
 
         world.fix_collision_x(goomba, entity, direction)
-        goomba.heading_x = -goomba.heading_x
+        goomba.heading[0] = -goomba.heading[0]
 
     def handle_stamp(self):
         state_machine = self.state_machine
         return state_machine.states[state_machine.body_state_name]
 
     def handle_push(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+    def get_shot(self):
         state_machine = self.state_machine
         return state_machine.states[state_machine.dead_state_name]
 
@@ -694,8 +713,9 @@ class GoombaDeadState(GoombaState):
         GoombaState.entry_action(self)
         
         goomba = self.goomba
-        mario = goomba.world.mario
+        goomba.etype = EntityType.FOREGROUND
 
+        mario = goomba.world.mario
         if mario.rect.center[0] > goomba.rect.center[0]:
             self.offset_x = -1
         else:
@@ -731,6 +751,10 @@ class GoombaBodyState(GoombaState):
         self.img_idx = 0
 
         self.live_frames = 32
+
+    def entry_action(self):
+        GoombaState.entry_action(self)
+        self.goomba.etype = EntityType.BODY
 
     def run(self):
         goomba = self.goomba
@@ -769,13 +793,16 @@ class GoombaStateMachine(object):
     def handle_stamp(self):
         new_state = self.active_state.handle_stamp()
         if new_state is not None:
-            self.goomba.etype = EntityType.BODY
             self.switch_to(new_state)
 
     def handle_push(self):
         new_state = self.active_state.handle_push()
         if new_state is not None:
-            self.goomba.etype = EntityType.FOREGROUND
+            self.switch_to(new_state)
+
+    def get_shot(self):
+        new_state = self.active_state.get_shot()
+        if new_state is not None:
             self.switch_to(new_state)
 
 class Goomba(GameEntity):
@@ -783,13 +810,13 @@ class Goomba(GameEntity):
         GameEntity.__init__(self, world, pos, EntityName.GOOMBA,
                             EntityType.ENEMY, game_rc.goomba1_img)
 
-        self.heading_x = -1
+        self.heading[0] = -1
         self.speed_x = 1 #no use, just x/y pair
         self.speed_y = 0 #0/1, indicate move on y
         self.state_machine = GoombaStateMachine(self)
     
     def set_img(self, img):
-        self.img = img
+        GameEntity.set_img(self, img)
 
     def update(self):
         self.state_machine.think()
@@ -799,6 +826,546 @@ class Goomba(GameEntity):
 
     def handle_push(self):
         self.state_machine.handle_push()
+
+    def get_shot(self):
+        self.state_machine.get_shot()
+
+class KoopaState(object):
+    def __init__(self, state_machine, state_name):
+        self.state_machine = state_machine
+        self.koopa = state_machine.koopa
+        self.state_name = state_name
+
+        self.img_set = []
+        self.img_idx = 0
+
+    def entry_action(self):
+        self.set_koopa_img()
+        pass
+
+    def run(self):
+        return None
+
+    def set_koopa_img(self):
+        img = self.img_set[self.img_idx]
+        self.koopa.set_img(img)
+
+    def handle_stamp(self):
+        return None
+
+    def handle_push(self):
+        return None
+
+    def handle_kick(self):
+        return None
+
+    def get_shot(self):
+        return None
+
+class KoopaNormalState(KoopaState):
+    MOVE_DOWN_MAX = 5
+
+    def __init__(self, state_machine):
+        KoopaState.__init__(self, state_machine,
+                            state_machine.normal_state_name)
+        
+        self.img_set = [game_rc.koopa1_img, game_rc.koopa2_img]
+        self.img_idx = 0
+        self.img_cnt = len(self.img_set)
+
+        self.offset_x = 1
+        self.move_counter = 0
+        self.move_rate = 2
+
+        self.transform_counter = 0
+        self.transform_rate = 8
+
+        self.fall_data = [(2, 1), (8, 3), (0, 5)]
+        self.fall_cycle = 0
+        self.fall_cur_frame = 0
+
+    def entry_action(self):
+        self.koopa.etype = EntityType.ENEMY
+        KoopaState.entry_action(self)
+
+    def calc_offset_x(self):
+        self.move_counter += 1
+        self.move_counter %= self.move_rate
+        if self.move_counter == 0:
+            return self.offset_x
+        else:
+            return 0
+
+    def calc_offset_y(self):
+        if self.koopa.speed_y == 0:
+            return 0
+
+        cur_fall_data = self.fall_data[self.fall_cycle]
+        offset_y = cur_fall_data[1]
+
+        self.fall_cur_frame += 1
+        if self.fall_cur_frame < cur_fall_data[0]:
+            return offset_y
+        
+        self.fall_cur_frame = 0
+        if cur_fall_data[0] > 0:
+            self.fall_cycle += 1
+
+        return offset_y
+
+    def move_koopa(self):
+        offset_x = self.calc_offset_x() * self.koopa.heading[0]
+        offset_y = self.calc_offset_y()
+        self.koopa.update_pos((offset_x, offset_y), with_direction=True)
+
+    def transform_img(self):
+        self.transform_counter += 1
+        self.transform_counter %= self.transform_rate
+
+        if self.transform_counter == 0:
+            self.img_idx += 1
+        self.img_idx %= self.img_cnt
+
+        self.set_koopa_img()
+
+    def run(self):
+        self.move_koopa()
+        self.transform_img()
+        self.check_collision()
+        self.check_on_ground()
+        self.check_exceed_border()
+        return None
+
+    def check_exceed_border(self):
+        koopa = self.koopa
+        world = koopa.world
+
+        if world.exceed_border(koopa) == False:
+            return
+
+        if koopa.rect.left == 1:
+            koopa.heading[0] = 1
+        else:
+            koopa.heading[0] = -1
+
+    def check_on_ground(self):
+        koopa = self.koopa
+        world = koopa.world
+        if world.is_not_on_ground(koopa):
+            koopa.speed_y = 1
+
+    def check_collision(self):
+        world = self.koopa.world
+
+        etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY,\
+                  EntityType.MARIO, EntityType.BODY] #TODO remove mario
+        collision_list = world.make_collision_entity_list(self.koopa, \
+                                                          etypes)
+        if len(collision_list) == 0:
+            return
+
+        self.check_collision_y(collision_list)
+        self.check_collision_x(collision_list)
+
+    def check_collision_y(self, collision_list):
+        koopa = self.koopa
+        if koopa.speed_y == 0:
+            return
+        
+        world = koopa.world
+        entity = world.is_on_ground(koopa, collision_list)
+        if entity is None:
+            return
+
+        offset_y = entity.rect.top - koopa.rect.bottom
+        if abs(offset_y) > self.MOVE_DOWN_MAX:
+            return
+
+        koopa.speed_y = 0
+        world.fix_collision_y(koopa, entity, GameDef.DIRECTION_UP)
+
+    def check_collision_x(self, collision_list):
+        koopa = self.koopa
+        world = koopa.world
+
+        (entity, direction) = world.check_collision_x(koopa, collision_list)
+        if entity is None:
+            return
+
+        if pygame.Rect.colliderect(koopa.rect, entity.rect) == False:
+            return
+
+        world.fix_collision_x(koopa, entity, direction)
+        koopa.heading[0] = -koopa.heading[0]
+
+    def handle_stamp(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.freeze_state_name]
+
+    def handle_push(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+    def get_shot(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+class KoopaFreezeState(KoopaState):
+    FREEZE_FRAMES = 250
+
+    def __init__(self, state_machine):
+        KoopaState.__init__(self, state_machine,
+                            state_machine.freeze_state_name)
+
+        self.img_set = [game_rc.koopa3_img, game_rc.koopa4_img]
+        self.img_idx = 0
+        self.img_cnt = len(self.img_set)
+
+        self.freeze_frames = self.FREEZE_FRAMES
+
+        self.cycle = 0
+        self.cycle_max = 10
+        self.cycle_frame = 0
+        self.cycle_frame_max = 8
+
+    def entry_action(self):
+        self.img_idx = 0
+        self.cycle = 0
+        self.cycle_frame = 0
+        self.freeze_frames = self.FREEZE_FRAMES
+        self.koopa.etype = EntityType.STILL
+        KoopaState.entry_action(self)
+
+    def run(self):
+        if self.freeze_frames > 0:
+            self.freeze_frames -= 1
+            return None
+
+        self.cycle_frame += 1
+        if self.cycle_frame < self.cycle_frame_max:
+            return None
+
+        self.cycle_frame = 0
+        self.cycle += 1
+        self.img_idx += 1
+        self.img_idx %= self.img_cnt
+        self.set_koopa_img()
+
+        if self.cycle < self.cycle_max:
+            return None
+        else:
+            states = self.state_machine.states
+            return states[self.state_machine.normal_state_name]
+
+    def handle_stamp(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.body_state_name]
+
+    def handle_push(self):
+        print "###handle push"
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+    def handle_kick(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.body_state_name]
+
+    def get_shot(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+class KoopaBodyState(KoopaState):
+    MOVE_DOWN_MAX = 5
+
+    def __init__(self, state_machine):
+        KoopaState.__init__(self, state_machine,
+                            state_machine.body_state_name)
+
+        self.img_set = [game_rc.koopa3_img]
+        self.img_idx = 0
+        self.offset_x = 3
+
+        self.fall_data = [(2, 1), (8, 3), (0, 5)]
+        self.fall_cycle = 0
+        self.fall_cur_frame = 0
+
+        self.is_shot_by_another = False
+
+    def entry_action(self):
+        koopa = self.koopa
+        KoopaState.entry_action(self)
+        self.koopa.etype = EntityType.ENEMY
+
+        mario = koopa.world.mario
+        if mario.rect.center[0] > koopa.rect.center[0]:
+            koopa.heading[0] = GameDef.DIRECTION_LEFT
+        else:
+            koopa.heading[0] = GameDef.DIRECTION_RIGHT
+
+    def calc_offset_x(self):
+        return self.offset_x
+
+    def calc_offset_y(self):
+        if self.koopa.speed_y == 0:
+            return 0
+
+        cur_fall_data = self.fall_data[self.fall_cycle]
+        offset_y = cur_fall_data[1]
+
+        self.fall_cur_frame += 1
+        if self.fall_cur_frame < cur_fall_data[0]:
+            return offset_y
+        
+        self.fall_cur_frame = 0
+        if cur_fall_data[0] > 0:
+            self.fall_cycle += 1
+
+        return offset_y
+
+    def move_koopa(self):
+        offset_x = self.calc_offset_x() * self.koopa.heading[0]
+        offset_y = self.calc_offset_y()
+        self.koopa.update_pos((offset_x, offset_y), with_direction=True)
+
+    def run(self):
+        self.move_koopa()
+        self.check_collision()
+        self.check_on_ground()
+        self.check_exceed_border()
+        
+        if self.is_shot_by_another:
+            state_machine = self.state_machine
+            return state_machine.states[state_machine.dead_state_name]
+        else:
+            return None
+
+    def check_exceed_border(self):
+        koopa = self.koopa
+        world = koopa.world
+
+        if world.exceed_border(koopa) == False:
+            return
+
+        if koopa.rect.left < 1:
+            koopa.heading[0] = 1
+        else:
+            koopa.heading[0] = -1
+
+    def check_on_ground(self):
+        koopa = self.koopa
+        world = koopa.world
+        if world.is_not_on_ground(koopa):
+            koopa.speed_y = 1
+
+    def check_collision(self):
+        world = self.koopa.world
+
+        etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY,\
+                  EntityType.MARIO, EntityType.BODY] #TODO remove mario
+        collision_list = world.make_collision_entity_list(self.koopa, \
+                                                          etypes)
+        if len(collision_list) == 0:
+            return
+
+        self.check_collision_y(collision_list)
+        self.check_collision_x(collision_list)
+
+    def check_collision_y(self, collision_list):
+        koopa = self.koopa
+        if koopa.speed_y == 0:
+            return
+        
+        world = koopa.world
+        entity = world.is_on_ground(koopa, collision_list)
+        if entity is None:
+            return
+
+        offset_y = entity.rect.top - koopa.rect.bottom
+        if abs(offset_y) > self.MOVE_DOWN_MAX:
+            return
+
+        koopa.speed_y = 0
+        world.fix_collision_y(koopa, entity, GameDef.DIRECTION_UP)
+
+    def shoot_entity(self, entity):
+        if entity.name == EntityName.KOOPA and \
+           entity.is_body_status():
+            self.is_shot_by_another = True
+        
+        if entity.etype == EntityType.ENEMY:
+            entity.get_shot()
+
+        if entity.name == EntityName.KOOPA and \
+           entity.etype == EntityType.STILL:
+            entity.get_shot()
+
+    def check_collision_x(self, collision_list):
+        koopa = self.koopa
+        world = koopa.world
+
+        (entity, direction) = world.check_collision_x(koopa, collision_list)
+        if entity is None:
+            return
+
+        if pygame.Rect.colliderect(koopa.rect, entity.rect) == False:
+            return
+
+        self.shoot_entity(entity)
+        world.fix_collision_x(koopa, entity, direction)
+        koopa.heading[0] = -koopa.heading[0]
+
+    def handle_stamp(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.freeze_state_name]
+
+    def handle_push(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+    def get_shot(self):
+        state_machine = self.state_machine
+        return state_machine.states[state_machine.dead_state_name]
+
+class KoopaDeadState(KoopaState):
+    def __init__(self, state_machine):
+        KoopaState.__init__(self, state_machine,
+                            state_machine.dead_state_name)
+
+        img = pygame.transform.flip(game_rc.koopa3_img, False, True)
+        self.img_set = [img]
+        self.img_idx = 0
+
+        self.offset_x = 0
+        self.offset_y = 0
+
+        self.offset_y_data = [(6, -2), (3, -1), (3, 0), (2, 1), (8, 3), (0, 5)]
+        self.offset_y_idx = 0
+        self.offset_y_frame = 0
+    
+    def entry_action(self):
+        KoopaState.entry_action(self)
+        
+        koopa = self.koopa
+        koopa.etype = EntityType.FOREGROUND
+
+        mario = koopa.world.mario
+        if mario.rect.center[0] > koopa.rect.center[0]:
+            self.offset_x = -1
+        else:
+            self.offset_x = 1
+
+    def calc_offset_y(self):
+        offset_data = self.offset_y_data[self.offset_y_idx]
+        self.offset_y = offset_data[1]
+
+        self.offset_y_frame += 1
+        if self.offset_y_frame < offset_data[0]:
+            return
+
+        self.offset_y_frame = 0
+        if offset_data[0] > 0:
+            self.offset_y_idx += 1
+
+    def run(self):
+        koopa = self.koopa
+        world = koopa.world
+
+        self.calc_offset_y()
+        koopa.update_pos((self.offset_x, self.offset_y), with_direction=True)
+        if world.is_out_of_screen(koopa):
+            world.remove_entity(koopa)
+
+class KoopaStateMachine(object):
+    normal_state_name = "normal_state"
+    freeze_state_name = "freeze_state"
+    body_state_name = "body_state"
+    dead_state_name = "dead_state"
+
+    def __init__(self, koopa):
+        self.koopa = koopa
+        self.states = {}
+
+        self.add_state(KoopaNormalState(self))
+        self.add_state(KoopaFreezeState(self))
+        self.add_state(KoopaBodyState(self))
+        self.add_state(KoopaDeadState(self))
+
+        self.active_state = None
+        self.switch_to(self.states[self.normal_state_name])
+
+    def add_state(self, state):
+        self.states[state.state_name] = state
+
+    def switch_to(self, state):
+        self.active_state = state
+        self.active_state.entry_action()
+
+    def think(self):
+        print "###koopa state", self.active_state.state_name, \
+              "etype", self.koopa.etype
+        new_state = self.active_state.run()
+        if new_state is not None:
+            self.switch_to(new_state)
+
+    def is_body_status(self):
+        if self.active_state.state_name == self.body_state_name:
+            return True
+        else:
+            return False
+
+    def handle_stamp(self):
+        new_state = self.active_state.handle_stamp()
+        if new_state is not None:
+            self.switch_to(new_state)
+
+    def handle_push(self):
+        print "###state machine handle push"
+        new_state = self.active_state.handle_push()
+        if new_state is not None:
+            self.switch_to(new_state)
+
+    def handle_kick(self):
+        new_state = self.active_state.handle_kick()
+        if new_state is not None:
+            self.switch_to(new_state)
+
+    def get_shot(self):
+        new_state = self.active_state.get_shot()
+        if new_state is not None:
+            self.switch_to(new_state)
+
+class Koopa(GameEntity):
+    def __init__(self, world, pos):
+        GameEntity.__init__(self, world, pos, EntityName.KOOPA,
+                            EntityType.ENEMY, game_rc.koopa1_img)
+
+        self.heading [0]= -1
+        self.speed_x = 1 #no use, just x/y pair
+        self.speed_y = 0 #0/1, indicate move on y
+        self.state_machine = KoopaStateMachine(self)
+    
+    def set_img(self, img):
+        if self.heading [0]> 0:
+            img = pygame.transform.flip(img, True, False)
+        GameEntity.set_img(self, img)
+
+    def update(self):
+        self.state_machine.think()
+
+    def is_body_status(self):
+        return self.state_machine.is_body_status()
+
+    def handle_stamp(self):
+        self.state_machine.handle_stamp()
+
+    def handle_push(self):
+        self.state_machine.handle_push()
+
+    def handle_kick(self):
+        self.state_machine.handle_kick()
+
+    def get_shot(self):
+        self.state_machine.get_shot()
 
 class MarioState(object):
     def __init__(self, state_machine, state_name, img_set,
@@ -1018,6 +1585,8 @@ class MarioWalkState(MarioState):
         (entity, direction) = world.check_collision_x(mario, collision_list)
         if entity is None:
             return None
+
+        entity.handle_kick()
 
         collision_align = world.calc_collision_align_x(entity, direction)
         state_machine.add_collision_align_x(collision_align, direction)
@@ -1267,6 +1836,7 @@ class MarioFlyState(MarioState):
 
     def stamp_collision_list(self, collision_list):
         mario = self.state_machine.mario
+        collision_align = 0
 
         stamp_enemy = False
         for entity in collision_list:
@@ -1274,7 +1844,9 @@ class MarioFlyState(MarioState):
             if abs(offset_y) > self.MOVE_DOWN_MAX_OFFSET:
                 continue
             if mario.rect.top < entity.rect.top < mario.rect.bottom:
-                if entity.etype == EntityType.ENEMY:
+                collision_align = entity.rect.top
+                if entity.etype == EntityType.ENEMY or \
+                   entity.etype == EntityType.BODY:
                     stamp_enemy = True
                 entity.handle_stamp()
 
@@ -1283,22 +1855,16 @@ class MarioFlyState(MarioState):
             direction = mario.get_speedx_direction()
             mario.set_speed_x(mario.SPEED_RUN_FAST_MAX*direction)
 
+        return collision_align
+
     def collision_state_transform_y(self, collision_list):
         state_machine = self.state_machine
         mario = state_machine.mario
         world = mario.world
 
-        entity = world.is_on_ground(mario, collision_list)
-        if entity == None:
-            return None
-
-        self.stamp_collision_list(collision_list)
-
+        collision_align = self.stamp_collision_list(collision_list)
         direction = GameDef.DIRECTION_UP
-        collision_align = world.calc_collision_align_y(entity, direction)
-
-        offset_y = collision_align - mario.rect.bottom
-        if abs(offset_y) > self.MOVE_DOWN_MAX_OFFSET:
+        if collision_align == 0:
             return None
 
         state_machine.add_collision_align_y(collision_align, direction)
@@ -1886,27 +2452,27 @@ def construct_world():
     world.add_entity(cloud)
 
     x = MARIO_START_X + 32
-    pipe = Pipe(world, (x, GROUND_Y), level=8)
-    world.add_entity(pipe)
+#    pipe = Pipe(world, (x, GROUND_Y), level=8)
+#    world.add_entity(pipe)
 
 #####bottom plate + brick#####
     x += (32+16)
-    plate = Plate(world, (x, GROUND_Y-20))
+    plate = Plate(world, (x, GROUND_Y-25))
     world.add_entity(plate)
 
-    rock = Rock(world, (x, GROUND_Y-20-16))
+    rock = Rock(world, (x, GROUND_Y-25-16))
     world.add_entity(rock)
 
     x += 16
-#    goomba = Goomba(world, (x, GROUND_Y))
-#    world.add_entity(goomba)
+    goomba = Goomba(world, (x, GROUND_Y))
+    world.add_entity(goomba)
 
     brick_cnt = 3
     for i in xrange(brick_cnt):
-        if i == 1:
-            brick = Plate(world, (x, GROUND_Y-20))
+        if i == 5:
+            brick = Plate(world, (x, GROUND_Y-25))
         else:
-            brick = Brick(world, (x, GROUND_Y-20))
+            brick = Brick(world, (x, GROUND_Y-25))
         world.add_entity(brick)
         x += 16
     
@@ -1929,6 +2495,7 @@ def construct_world():
     world.add_entity(rock)
 
     goomba = Goomba(world, (x-16, 100-16+1-20))
+#    goomba = Goomba(world, (x-16, 200))
     world.add_entity(goomba)
 
 #####left side rock#####
@@ -1969,7 +2536,7 @@ def build_rect_from_pos(pos, w, h):
 
 counter = 0
 def generate_enemy(world):
-    goomba_max_cnt = 2
+    goomba_max_cnt = 1
     goomba_cnt = 0
 
     global counter
@@ -1979,12 +2546,12 @@ def generate_enemy(world):
         return
 
     for entity in world.entities.itervalues():
-        if entity.name == EntityName.GOOMBA:
+        if entity.name == EntityName.KOOPA:
             goomba_cnt += 1
 
     if goomba_cnt < goomba_max_cnt: 
         #goomba = Goomba(world, (230, 60))
-        goomba = Goomba(world, (144, 160))
+        goomba = Koopa(world, (144, 160))
         world.add_entity(goomba)
 
 SCREEN_BK_COLOR = (148, 148, 255, 255)
