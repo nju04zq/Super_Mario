@@ -281,24 +281,49 @@ class ViewChange(object):
         self.new_color = new_color
 
 class View(object):
-    MIN_SCALE_LEVEL = 16
+    MIN_SCALE_LEVEL = 12
     MAX_SCALE_LEVEL = 24
-    SELECTOR_THICK = 4
+    SCALE_LEVEL_PACE = 4
+    SELECTOR_THICK = 2
 
     def __init__(self, painter, pos, size, src_file, tgt_file):
         self.painter = painter
         self.pos = pos
         self.size = size
-        self.scale_level = self.MAX_SCALE_LEVEL
         self.img = pygame.image.load(src_file).convert_alpha()
         self.img_size = self.img.get_size()
-        self.img_pos = self.calc_img_pos()
         self.tgt_file = tgt_file
         self.is_dirty = False
         self.change_list = []
 
         self.selector = [0, 0]
         self.update_selector()
+
+        self.init_scale_level()
+        self.img_pos = self.calc_img_pos()
+
+    def is_scale_level_qualified(self, level):
+        scaled_w = level * self.img_size[0]
+        scaled_h = level * self.img_size[1]
+        if scaled_w < self.size[0] and scaled_h < self.size[1]:
+            return True
+        else:
+            return False
+
+    def init_scale_level(self):
+        min_level = self.MIN_SCALE_LEVEL
+        max_level = self.MAX_SCALE_LEVEL
+        level_pace = self.SCALE_LEVEL_PACE
+        self.scale_levels = range(min_level, max_level+1, level_pace)
+
+        self.scale_level_max_idx  = 0
+        for level in self.scale_levels[1:]:
+            if self.is_scale_level_qualified(level):
+                self.scale_level_max_idx += 1
+
+        self.scale_level_idx = self.scale_level_max_idx
+        print self.scale_level_idx
+        self.update_scale_level()
 
     def calc_img_pos(self):
         scaled_w = self.img_size[0] * self.scale_level
@@ -421,15 +446,19 @@ class View(object):
         view_change = self.change_list.pop()
         self.img.set_at(view_change.pos, view_change.old_color)
 
-    def inc_scale_level(self):
-        if self.scale_level == self.MIN_SCALE_LEVEL:
-            self.scale_level = self.MAX_SCALE_LEVEL
+    def update_scale_level(self):
+        self.scale_level = self.scale_levels[self.scale_level_idx]
         self.img_pos = self.calc_img_pos()
 
+    def inc_scale_level(self):
+        if self.scale_level_idx < self.scale_level_max_idx:
+            self.scale_level_idx += 1
+        self.update_scale_level()
+
     def dec_scale_level(self):
-        if self.scale_level == self.MAX_SCALE_LEVEL:
-            self.scale_level = self.MIN_SCALE_LEVEL
-        self.img_pos = self.calc_img_pos()
+        if self.scale_level_idx > 0:
+            self.scale_level_idx -= 1
+        self.update_scale_level()
 
     def process_keyup(self, key):
         if key == K_UP:
