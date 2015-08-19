@@ -25,7 +25,6 @@ class Palette(object):
     COLOR_SIZE = 24
     COLOR_START = MARGIN_SIZE + LABEL_SIZE + PADDING_WIDTH
     SELECTOR_THICK = PADDING_WIDTH/2
-    SELECTOR_COLOR = (0, 0, 0, 255)
 
     def __init__(self, pos, src_file, palette_file):
         self.pos = pos
@@ -35,6 +34,8 @@ class Palette(object):
         self.color_list.sort(self.cmp_color)
 
         self.selector_idx = 0
+        self.selector_locked = False
+        self.selector_last_visit = 0
 
         self.label_font = pygame.font.SysFont("Arial", 24)
         self.label_num = "0123456789abcdef"
@@ -164,16 +165,23 @@ class Palette(object):
         y -= self.SELECTOR_THICK
         size += (self.SELECTOR_THICK*2)
         rect = pygame.Rect((x, y), (size, size))
-        pygame.draw.rect(surface, self.SELECTOR_COLOR, rect,
-                         self.SELECTOR_THICK)
+        if self.selector_locked:
+            color = (255, 255, 255, 255)
+        else:
+            color = (0, 0, 0, 255)
+        pygame.draw.rect(surface, color, rect, self.SELECTOR_THICK)
 
     def move_selector_up(self):
+        if self.selector_locked:
+            return
         idx = self.selector_idx
         idx -= self.COLOR_CNT_PER_LINE
         if idx >= 0:
             self.selector_idx = idx
 
     def move_selector_down(self):
+        if self.selector_locked:
+            return
         max_idx = len(self.color_list)
         idx = self.selector_idx
         idx += self.COLOR_CNT_PER_LINE
@@ -181,10 +189,14 @@ class Palette(object):
             self.selector_idx = idx
 
     def move_selector_left(self):
+        if self.selector_locked:
+            return
         if self.selector_idx > 0:
             self.selector_idx -= 1
 
     def move_selector_right(self):
+        if self.selector_locked:
+            return
         max_idx = len(self.color_list) - 1
         if self.selector_idx < max_idx:
             self.selector_idx += 1
@@ -193,25 +205,38 @@ class Palette(object):
         return self.color_list[self.selector_idx]
     
     def get_color_idx(self, color):
-        index = "not exist"
         try:
             index = self.color_list.index(color)
         except:
-            pass
+            index = "not exist"
         else:
             index = str(self.split_idx(index))
 
         return index
 
     def set_selector_color(self, color):
-        index = 0
+        if self.selector_locked:
+            return
         try:
             index = self.color_list.index(color)
         except:
-            pass
-        
+            index = 0
+
         self.selector_idx = index
-    
+
+    def lock_selector(self, idx):
+        old_ts = self.selector_last_visit
+        new_ts = pygame.time.get_ticks()
+
+        if idx != self.selector_idx:
+            return
+
+        self.selector_last_visit = new_ts
+        if (self.selector_last_visit - old_ts) > 500:
+            return
+
+        self.selector_locked = not self.selector_locked
+
     def process_keyup(self, key):
         if key == K_w:
             self.move_selector_up()
@@ -245,7 +270,9 @@ class Palette(object):
         if dx > self.COLOR_SIZE or dy > self.COLOR_SIZE:
             return
 
-        self.selector_idx = idx
+        self.lock_selector(idx)
+        if self.selector_locked == False:
+            self.selector_idx = idx
 
 class ViewChange(object):
     def __init__(self, pos, old_color, new_color):
@@ -530,6 +557,10 @@ class Painter(object):
         self.view.process_keyup(key)
 
     def process_mousebuttondown(self):
+        pressed = pygame.mouse.get_pressed()
+        if pressed[0] == False:
+            return
+
         pos = pygame.mouse.get_pos()
         self.palette.process_mousebuttondown(pos)
         self.view.process_mousebuttondown(pos)
