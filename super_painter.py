@@ -227,12 +227,12 @@ class Palette(object):
     def lock_selector(self, idx):
         old_ts = self.selector_last_visit
         new_ts = pygame.time.get_ticks()
+        self.selector_last_visit = new_ts
 
         if idx != self.selector_idx:
             return
 
-        self.selector_last_visit = new_ts
-        if (self.selector_last_visit - old_ts) > 500:
+        if (new_ts - old_ts) > 500:
             return
 
         self.selector_locked = not self.selector_locked
@@ -247,27 +247,37 @@ class Palette(object):
         elif key == K_d:
             self.move_selector_right()
 
-    def process_mousebuttondown(self, pos):
+    def is_pos_in_palette(self, pos):
         rect = pygame.Rect(self.pos, (self.w, self.h))
-        if rect.collidepoint(pos) == False:
-            return
+        return rect.collidepoint(pos)
 
+    def calc_selector_idx_from_pos(self, pos):
         color_area_size = self.COLOR_SIZE+self.PADDING_WIDTH
 
         dx = pos[0] - self.COLOR_START
         dy = pos[1] - self.COLOR_START
         if dx < 0 or dy < 0:
-            return
+            return -1
 
         row = dy/color_area_size
         column = dx/color_area_size
         idx = row * self.COLOR_CNT_PER_LINE + column
         if idx >= len(self.color_list):
-            return
+            return -1
 
         dx %= color_area_size
         dy %= color_area_size
         if dx > self.COLOR_SIZE or dy > self.COLOR_SIZE:
+            return -1
+
+        return idx
+
+    def process_mousebuttondown(self, pos):
+        if self.is_pos_in_palette(pos) == False:
+            return
+        
+        idx = self.calc_selector_idx_from_pos(pos)
+        if idx == -1:
             return
 
         self.lock_selector(idx)
@@ -322,7 +332,6 @@ class View(object):
                 self.scale_level_max_idx += 1
 
         self.scale_level_idx = self.scale_level_max_idx
-        print self.scale_level_idx
         self.update_scale_level()
 
     def calc_img_pos(self):
