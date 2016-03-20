@@ -1301,8 +1301,8 @@ class KoopaStateMachine(object):
         self.active_state.entry_action()
 
     def think(self):
-        print "###koopa state", self.active_state.state_name, \
-              "etype", self.koopa.etype
+        #print "###koopa state", self.active_state.state_name, \
+        #      "etype", self.koopa.etype
         new_state = self.active_state.run()
         if new_state is not None:
             self.switch_to(new_state)
@@ -1319,7 +1319,7 @@ class KoopaStateMachine(object):
             self.switch_to(new_state)
 
     def handle_push(self):
-        print "###state machine handle push"
+        #print "###state machine handle push"
         new_state = self.active_state.handle_push()
         if new_state is not None:
             self.switch_to(new_state)
