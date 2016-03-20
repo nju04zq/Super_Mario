@@ -5,9 +5,19 @@ How to run on Windows 7
 ----
 1. Download & install python 2.7.10 [here](https://www.python.org/downloads/)
 2. Download & install pygame 1.9.1 [here](http://pygame.org/ftp/pygame-1.9.1.win32-py2.7.msi)
-3. Install python package gameobjects. In windows cmd, run "easy_install gameobjects"
-4. Download all the project files. Then go to the directory in windows cmd, issue "python super_mario.py"
+3. Install python package gameobjects. In windows cmd, run "easy\_install gameobjects". Gameobjects source code is on google code site. If you cann't access them, you can also install with the one gameobjects/gameobjects-0.0.3.win32.exe.
+4. Download all the project files. Then go to the directory in windows cmd, issue "python super\_mario.py"
 
+Develop notes on Mac
+----
+Do the following to install virtual python env
+1. source virtualenvwrapper.sh
+2. mkvirtualenv pygame\_sdl2
+Virtual env pygame\_sdl2 setup details could be found on https://github.com/renpy/pygame\_sdl2
+
+Screenshots
+----
+![GCH IPC](./desc_png/super_mario_1.png)
 
 Development Notes
 =====
