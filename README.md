@@ -17,7 +17,11 @@ Virtual env pygame\_sdl2 setup details could be found on https://github.com/renp
 
 Screenshots
 ----
-![GCH IPC](./desc_png/super_mario_1.png)
+![Super mario screenshot](./desc_png/super_mario_1.png)
+
+
+![Super painter screenshot](./desc_png/super_painter_1.png)
+
 
 Development Notes
 =====
