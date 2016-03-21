@@ -1,6 +1,14 @@
 Notes for python Super Mario project
 =====
 
+Brief Introduction
+====
+This is a python clone for Nintendo‘s classic Super Mario game. Now Mario can walk & jump in a fixed world, without support for scrolling.
+
+Another pixel-level picture editor Super Painter was created for this project. It can change the color pixel by pixel for the input PNG image, and then save the changed version to disk.
+
+Want to see how they look like, go to below Screenshots section.
+
 How to run on Windows 7
 ----
 1. Download & install python 2.7.10 [here](https://www.python.org/downloads/)
