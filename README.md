@@ -30,6 +30,7 @@ Screenshots
 
 ![Super painter screenshot](./desc_png/super_painter_1.png)
 
+<embed src='http://player.youku.com/player.php/sid/XMzQxODA2MjYyOA==/v.swf' allowFullScreen='true' quality='high' width='480' height='400' align='middle' allowScriptAccess='always' type='application/x-shockwave-flash'></embed>
 
 Development Notes
 =====
