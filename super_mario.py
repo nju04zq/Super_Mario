@@ -89,11 +89,11 @@ class World(object):
         return entity_list
 
     def is_not_on_ground(self, entity):
-        entity.rect.move_ip((0, 1))
+        entity.rect.move_ip(*(0, 1))
         etypes = [EntityType.GROUND, EntityType.STILL, EntityType.ENEMY,\
                   EntityType.MARIO] #TODO remove mario
         collision_list = self.make_collision_entity_list(entity, etypes)
-        entity.rect.move_ip((0, -1))
+        entity.rect.move_ip(*(0, -1))
 
         if len(collision_list) == 0:
             return True
@@ -167,7 +167,7 @@ class World(object):
             return False
 
     def push_on_top_entity(self, entity):
-        entity.rect.move_ip((0, -1))
+        entity.rect.move_ip(*(0, -1))
 
         etypes = [EntityType.ENEMY, EntityType.STILL]
         collision_list = self.make_collision_entity_list(entity, etypes)
@@ -179,7 +179,7 @@ class World(object):
             if entity1.rect.top < entity.rect.top < entity1.rect.bottom:
                 entity1.handle_push()
         
-        entity.rect.move_ip((0, 1))
+        entity.rect.move_ip(*(0, 1))
 
 class GameEntity(object):
     def __init__(self, world, pos, name, etype, img):
@@ -236,7 +236,7 @@ class GameEntity(object):
         offset = self.calc_offset(offset, heading)
         offset_vector = Vector2(offset[0], offset[1])
         self.pos += offset_vector
-        self.rect.move_ip(offset_vector)
+        self.rect.move_ip(*(offset[0], offset[1]))
 
     def handle_push(self):
         pass
