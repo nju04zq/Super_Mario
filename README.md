@@ -32,6 +32,8 @@ Screenshots
 
 <embed src='http://player.youku.com/player.php/sid/XMzQxODA2MjYyOA==/v.swf' allowFullScreen='true' quality='high' width='480' height='400' align='middle' allowScriptAccess='always' type='application/x-shockwave-flash'></embed>
 
+[![Watch the demo](./desc_png/screenshot.png)](http://v.youku.com/v_show/id_XMzQxODA2MjYyOA==.html?spm=a2hzp.8244740.0.0)
+
 Development Notes
 =====
 
